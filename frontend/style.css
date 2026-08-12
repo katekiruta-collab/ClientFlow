@@ -1,0 +1,1048 @@
+/* =========================================================
+ClientFlow UI
+Mobile First
+========================================================= */
+
+:root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+
+    --text: #1f2937;
+    --muted: #6b7280;
+
+    --primary: #2563eb;
+    --primary-light: #dbeafe;
+
+    --border: #e5e7eb;
+
+    --danger: #dc2626;
+    --danger-light: #fee2e2;
+
+    --success: #15803d;
+    --success-light: #dcfce7;
+
+    --warning: #b45309;
+    --warning-light: #fef3c7;
+
+    /* ✅ ДОБАВЛЕНО: переменная для высоты viewport */
+    --app-height: var(--tg-viewport-stable-height, 100vh);
+    --nav-height: 64px;
+}
+
+/* =========================================================
+RESET
+========================================================= */
+
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html {
+    min-height: 100%;
+    -webkit-text-size-adjust: 100%;
+    overflow: hidden; /* ✅ ИСПРАВЛЕНО: предотвращаем скролл body */
+}
+
+body {
+    margin: 0;
+    min-height: var(--app-height); /* ✅ ИСПРАВЛЕНО: используем переменную */
+    height: var(--app-height);
+    overflow: hidden; /* ✅ ИСПРАВЛЕНО: скролл только внутри .main */
+
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        Arial,
+        sans-serif;
+
+    background: var(--bg);
+    color: var(--text);
+}
+
+button {
+    border: none;
+    background: none;
+    font-family: inherit;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+button:active {
+    transform: scale(0.97);
+}
+
+input,
+select,
+button {
+    font: inherit;
+}
+
+/* =========================================================
+APP
+========================================================= */
+
+.app {
+    width: 100%;
+    height: var(--app-height); /* ✅ ИСПРАВЛЕНО: фиксированная высота */
+    max-height: var(--app-height);
+
+    margin: 0 auto;
+
+    padding: 14px 14px 0; /* ✅ ИСПРАВЛЕНО: убрали padding-bottom */
+
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* ✅ ИСПРАВЛЕНО: контейнер не скроллится */
+}
+
+/* ✅ ДОБАВЛЕНО: main как скроллируемая область */
+.main {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px) + 14px);
+    margin: 0 -14px;
+    padding-left: 14px;
+    padding-right: 14px;
+}
+
+/* =========================================================
+HEADER
+========================================================= */
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    gap: 12px;
+
+    margin-bottom: 20px;
+    flex-shrink: 0; /* ✅ ИСПРАВЛЕНО: header не сжимается */
+}
+
+.greeting {
+    margin: 0 0 4px;
+
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.header h1 {
+    margin: 0;
+
+    font-size: 24px;
+    line-height: 1.2;
+}
+
+.avatar {
+    flex: 0 0 auto;
+
+    width: 42px;
+    height: 42px;
+
+    border-radius: 50%;
+
+    background: var(--primary);
+    color: white;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    font-weight: 700;
+    font-size: 17px;
+}
+
+/* =========================================================
+SCREENS
+========================================================= */
+
+.screen {
+    display: none;
+}
+
+.screen.active {
+    display: block;
+}
+
+/* =========================================================
+CARDS
+========================================================= */
+
+.today-card,
+.next-card,
+.client-card,
+.appointment-card,
+.invoice-card,
+.calendar-card {
+    background: var(--card);
+
+    border-radius: 18px;
+
+    padding: 16px;
+
+    margin-bottom: 14px;
+
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+.today-card h2 {
+    margin: 0 0 14px;
+
+    font-size: 19px;
+    line-height: 1.25;
+}
+
+/* =========================================================
+STATS
+========================================================= */
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.stat {
+    min-width: 0;
+
+    background: #f9fafb;
+
+    border-radius: 14px;
+
+    padding: 10px 5px;
+
+    text-align: center;
+}
+
+.stat span {
+    display: block;
+    font-size: 18px;
+}
+
+.stat strong {
+    display: block;
+    font-size: 17px;
+    margin: 4px 0;
+    white-space: nowrap;
+}
+
+.stat small {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+/* =========================================================
+DASHBOARD
+========================================================= */
+
+.label {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0 0 10px;
+}
+
+.dashboard-next {
+    min-height: 55px;
+}
+
+.empty-dashboard {
+    color: var(--muted);
+    padding: 6px 0;
+}
+
+.appointment {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.appointment h2 {
+    margin: 0 0 4px;
+    font-size: 22px;
+}
+
+.appointment p {
+    margin: 0;
+    word-break: break-word;
+}
+
+.service {
+    min-width: 0;
+    text-align: right;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.service strong {
+    color: var(--text);
+}
+
+/* =========================================================
+QUICK ACTIONS
+========================================================= */
+
+.quick-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.action-card {
+    min-width: 0;
+    background: var(--card);
+    border-radius: 16px;
+    padding: 13px 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+    text-align: center;
+}
+
+.action-card span {
+    font-size: 22px;
+}
+
+.action-card p {
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.25;
+}
+
+/* =========================================================
+SCREEN HEADER
+========================================================= */
+
+.screen-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.screen-header h2 {
+    margin: 0;
+    font-size: 22px;
+    line-height: 1.2;
+}
+
+.add-btn {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    font-size: 24px;
+    line-height: 38px;
+}
+
+/* =========================================================
+CALENDAR
+========================================================= */
+
+.calendar-card {
+    padding: 12px;
+    margin-bottom: 14px;
+}
+
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.calendar-title {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.calendar-title strong {
+    font-size: 16px;
+    text-transform: capitalize;
+    text-align: center;
+}
+
+.calendar-arrow {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    background: #f3f4f6;
+    color: var(--text);
+    font-size: 25px;
+    line-height: 30px;
+}
+
+.calendar-today-btn {
+    padding: 3px 8px;
+    border-radius: 8px;
+    color: var(--primary);
+    background: var(--primary-light);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 3px;
+}
+
+.calendar-weekday {
+    min-width: 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 4px 0 6px;
+}
+
+.calendar-day {
+    position: relative;
+    min-width: 0;
+    min-height: 44px;
+    border-radius: 11px;
+    background: transparent;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 13px;
+    padding: 2px;
+}
+
+.calendar-day.empty {
+    pointer-events: none;
+}
+
+.calendar-day:hover {
+    background: #f3f4f6;
+}
+
+.calendar-day.today {
+    background: var(--primary-light);
+    color: var(--primary);
+    font-weight: 700;
+}
+
+.calendar-day.selected {
+    background: var(--primary);
+    color: white;
+    font-weight: 700;
+}
+
+.calendar-day.selected.today {
+    background: var(--primary);
+}
+
+.calendar-day-number {
+    line-height: 18px;
+}
+
+.calendar-dots {
+    display: flex;
+    gap: 2px;
+    min-height: 4px;
+}
+
+.calendar-dots i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--primary);
+}
+
+.calendar-day.selected .calendar-dots i {
+    background: white;
+}
+
+.calendar-count {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    min-width: 13px;
+    height: 13px;
+    padding: 0 2px;
+    border-radius: 7px;
+    background: var(--warning-light);
+    color: var(--warning);
+    font-size: 8px;
+    line-height: 13px;
+    text-align: center;
+    font-weight: 700;
+}
+
+.calendar-day.selected .calendar-count {
+    background: white;
+    color: var(--primary);
+}
+
+.selected-date-header {
+    display: flex;
+    align-items: center;
+    margin: 4px 4px 10px;
+}
+
+.selected-date-header h3 {
+    margin: 0;
+    font-size: 17px;
+}
+
+/* =========================================================
+CLIENT
+========================================================= */
+
+.client-card {
+    display: flex;
+    flex-direction: column;
+}
+
+.card-main {
+    min-width: 0;
+}
+
+.card-main h3 {
+    margin: 0 0 7px;
+    font-size: 17px;
+}
+
+.card-main p {
+    margin: 0 0 8px;
+    color: var(--muted);
+    word-break: break-word;
+}
+
+.client-status {
+    font-size: 13px;
+    color: var(--primary);
+}
+
+.archived-card {
+    opacity: 0.65;
+}
+
+.section-subtitle {
+    margin: 22px 4px 10px;
+    font-size: 16px;
+    color: var(--muted);
+}
+
+/* =========================================================
+APPOINTMENT
+========================================================= */
+
+.appointment-card {
+    display: flex;
+    gap: 11px;
+    align-items: flex-start;
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.appointment-time {
+    flex: 0 0 auto;
+    min-width: 51px;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.appointment-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.appointment-info h3 {
+    margin: 0 0 6px;
+    font-size: 17px;
+    word-break: break-word;
+}
+
+.appointment-info p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.appointment-status {
+    display: block;
+    margin-top: 7px;
+    font-size: 12px;
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.appointment-status.appointment-paid {
+    color: var(--success);
+}
+
+/* =========================================================
+COMPLETED APPOINTMENT
+========================================================= */
+
+.appointment-card.appointment-completed {
+    opacity: 0.55;
+    background: #f3f4f6;
+}
+
+.appointment-card.appointment-completed .appointment-time {
+    color: var(--muted);
+}
+
+.appointment-card.appointment-completed .appointment-info h3 {
+    color: var(--muted);
+}
+
+.appointment-card.appointment-completed .appointment-info p {
+    color: #9ca3af;
+}
+
+/* =========================================================
+INVOICE
+========================================================= */
+
+.invoice-card {
+    display: flex;
+    flex-direction: column;
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.invoice-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.invoice-main {
+    min-width: 0;
+}
+
+.invoice-main h3 {
+    margin: 0 0 6px;
+    font-size: 17px;
+}
+
+.invoice-main p {
+    margin: 0 0 5px;
+    color: var(--muted);
+    word-break: break-word;
+}
+
+.invoice-top strong {
+    flex: 0 0 auto;
+    font-size: 20px;
+    white-space: nowrap;
+}
+
+.invoice-status {
+    display: inline-block;
+    margin-top: 9px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.invoice-status.paid {
+    color: var(--success);
+}
+
+.invoice-status.unpaid {
+    color: var(--warning);
+}
+
+.invoice-date {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.invoice-completed {
+    opacity: 0.55;
+    background: #f3f4f6;
+}
+
+.invoice-completed .invoice-main h3 {
+    color: var(--muted);
+}
+
+.invoice-completed .invoice-top strong {
+    color: var(--muted);
+}
+
+/* =========================================================
+CARD ACTIONS
+========================================================= */
+
+.card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 14px;
+    align-items: center;
+}
+
+.small-btn {
+    min-height: 36px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.edit-btn {
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+.archive-btn {
+    background: #f3f4f6;
+    color: #4b5563;
+}
+
+.restore-btn {
+    background: var(--success-light);
+    color: #166534;
+}
+
+.danger-btn {
+    background: var(--danger-light);
+    color: #b91c1c;
+}
+
+.invoice-status-btn {
+    background: var(--success-light);
+    color: #166534;
+}
+
+.pay-btn {
+    background: var(--success);
+    color: white;
+}
+
+.paid-btn {
+    background: var(--success-light);
+    color: var(--success);
+    cursor: default;
+}
+
+.invoice-link-note {
+    padding: 5px 2px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+/* =========================================================
+EMPTY STATE
+========================================================= */
+
+.empty-state {
+    background: var(--card);
+    border-radius: 18px;
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--muted);
+}
+
+/* =========================================================
+BOTTOM NAVIGATION
+========================================================= */
+
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%; /* ✅ ИСПРАВЛЕНО: центрируем */
+    transform: translateX(-50%); /* ✅ ИСПРАВЛЕНО: центрируем */
+    
+    width: 100%;
+    max-width: 100%; /* ✅ ИСПРАВЛЕНО: ограничиваем ширину */
+
+    background: rgba(255, 255, 255, 0.97);
+
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+
+    padding: 8px 6px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+
+    border-top: 1px solid var(--border);
+
+    z-index: 50;
+
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.nav-btn {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: 48px;
+    color: var(--muted);
+    font-size: 20px;
+}
+
+.nav-btn span {
+    font-size: 10px;
+}
+
+.nav-btn.active {
+    color: var(--primary);
+}
+
+/* =========================================================
+MODAL
+========================================================= */
+
+#clientflow-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+}
+
+#clientflow-modal.show {
+    display: block;
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+}
+
+.modal-box {
+    width: 100%;
+    max-width: 420px;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    background: white;
+    border-radius: 22px 22px 0 0;
+    padding: 22px 18px;
+    padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.18);
+}
+
+.modal-box h2 {
+    margin: 0 35px 20px 0;
+    font-size: 21px;
+}
+
+.modal-box p {
+    line-height: 1.5;
+}
+
+.modal-box input,
+.modal-box select {
+    width: 100%;
+    min-height: 46px;
+    padding: 12px 13px;
+    margin-bottom: 11px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: white;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 16px;
+    outline: none;
+}
+
+.modal-box input:focus,
+.modal-box select:focus {
+    border-color: var(--primary);
+}
+
+.modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #f3f4f6;
+    color: #4b5563;
+    font-size: 25px;
+    line-height: 1;
+}
+
+.primary-btn {
+    width: 100%;
+    min-height: 46px;
+    background: var(--primary);
+    color: white;
+    padding: 12px;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 5px;
+}
+
+.secondary-btn {
+    width: 100%;
+    min-height: 46px;
+    padding: 12px;
+    border-radius: 14px;
+    background: #f1f5f9;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.danger-action-btn {
+    width: 100%;
+    min-height: 46px;
+    padding: 12px;
+    border-radius: 14px;
+    background: var(--danger);
+    color: white;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.confirm-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* =========================================================
+SMALL PHONES
+========================================================= */
+
+@media (max-width: 360px) {
+    .app {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+
+    .main {
+        margin: 0 -10px;
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+
+    .stats {
+        gap: 5px;
+    }
+
+    .stat {
+        padding: 9px 3px;
+    }
+
+    .stat strong {
+        font-size: 16px;
+    }
+
+    .stat small {
+        font-size: 10px;
+    }
+
+    .appointment {
+        gap: 7px;
+    }
+
+    .appointment-time {
+        min-width: 47px;
+        font-size: 17px;
+    }
+
+    .calendar-day {
+        min-height: 42px;
+    }
+
+    .calendar-arrow {
+        width: 34px;
+        height: 34px;
+    }
+
+    .card-actions {
+        gap: 6px;
+    }
+
+    .small-btn {
+        padding: 8px 9px;
+        font-size: 11px;
+    }
+}
+
+/* =========================================================
+TABLETS
+========================================================= */
+
+@media (min-width: 600px) {
+    body {
+        background: #e9edf5;
+    }
+
+    .app {
+        max-width: 600px;
+        background: var(--bg);
+        min-height: var(--app-height);
+        padding: 20px 20px 0;
+    }
+
+    .main {
+        margin: 0 -20px;
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .bottom-nav {
+        max-width: 600px;
+    }
+
+    .modal-overlay {
+        align-items: center;
+        padding: 20px;
+    }
+
+    .modal-box {
+        border-radius: 22px;
+        padding: 22px;
+        max-height: 90vh;
+    }
+}
+
+/* =========================================================
+DESKTOP
+========================================================= */
+
+@media (min-width: 900px) {
+    .app {
+        max-width: 720px;
+    }
+
+    .bottom-nav {
+        max-width: 720px;
+    }
+
+    .today-card,
+    .next-card,
+    .client-card,
+    .appointment-card,
+    .invoice-card,
+    .calendar-card {
+        border-radius: 20px;
+    }
+}

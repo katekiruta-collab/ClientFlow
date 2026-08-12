@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#f6f7fb">
+    <title>ClientFlow</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ВСЁ ВНУТРИ .app, включая нижнее меню -->
+<div class="app">
+
+    <header class="header">
+        <div class="header-content">
+            <p class="greeting">Добрый день 👋</p>
+            <h1>ClientFlow</h1>
+        </div>
+        <div class="avatar">C</div>
+    </header>
+
+    <main class="main">
+        <section class="screen active" id="dashboard-screen">
+            <div class="today-card">
+                <h2>Сегодня</h2>
+                <div class="stats">
+                    <div class="stat">
+                        <span>📅</span>
+                        <strong id="dashboard-appointments">0</strong>
+                        <small>записей</small>
+                    </div>
+                    <div class="stat">
+                        <span>💰</span>
+                        <strong id="dashboard-expected">0 €</strong>
+                        <small>ожидается</small>
+                    </div>
+                    <div class="stat">
+                        <span>✅</span>
+                        <strong id="dashboard-actual">0 €</strong>
+                        <small>получено</small>
+                    </div>
+                </div>
+            </div>
+            <div class="next-card">
+                <p class="label">Следующая запись</p>
+                <div id="dashboard-next" class="dashboard-next">Нет предстоящих записей</div>
+            </div>
+            <div class="quick-actions">
+                <button class="action-card" type="button" data-screen="clients"><span>👥</span><p>Клиенты</p></button>
+                <button class="action-card" type="button" data-screen="appointments"><span>📅</span><p>Записи</p></button>
+                <button class="action-card" type="button" data-screen="invoices"><span>💰</span><p>Счета</p></button>
+            </div>
+        </section>
+
+        <section class="screen" id="clients-screen">
+            <div class="screen-header">
+                <h2>Клиенты</h2>
+                <button class="add-btn" type="button" data-add="client" aria-label="Добавить клиента">+</button>
+            </div>
+            <div class="list"></div>
+        </section>
+
+        <section class="screen" id="appointments-screen">
+            <div class="screen-header">
+                <h2>Записи</h2>
+                <button class="add-btn" type="button" data-add="appointment" aria-label="Добавить запись">+</button>
+            </div>
+            <div class="calendar-card" id="appointments-calendar">
+                <div class="calendar-header">
+                    <button class="calendar-arrow" id="calendar-prev" type="button" aria-label="Предыдущий месяц">‹</button>
+                    <div class="calendar-title">
+                        <strong id="calendar-month-title">Август 2026</strong>
+                        <button class="calendar-today-btn" id="calendar-today" type="button">Сегодня</button>
+                    </div>
+                    <button class="calendar-arrow" id="calendar-next" type="button" aria-label="Следующий месяц">›</button>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
+            </div>
+            <div class="selected-date-header">
+                <h3 id="selected-date-title">Сегодня</h3>
+            </div>
+            <div class="list"></div>
+        </section>
+
+        <section class="screen" id="invoices-screen">
+            <div class="screen-header">
+                <h2>Счета</h2>
+                <button class="add-btn" type="button" data-add="invoice" aria-label="Добавить счёт">+</button>
+            </div>
+            <div class="list"></div>
+        </section>
+    </main>
+
+    <!-- ВНУТРИ .app -->
+    <nav class="bottom-nav">
+        <button class="nav-btn active" type="button" data-screen="dashboard">
+            <span class="nav-icon">🏠</span><span>Главная</span>
+        </button>
+        <button class="nav-btn" type="button" data-screen="clients">
+            <span class="nav-icon">👥</span><span>Клиенты</span>
+        </button>
+        <button class="nav-btn" type="button" data-screen="appointments">
+            <span class="nav-icon">📅</span><span>Записи</span>
+        </button>
+        <button class="nav-btn" type="button" data-screen="invoices">
+            <span class="nav-icon">💰</span><span>Счета</span>
+        </button>
+    </nav>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
