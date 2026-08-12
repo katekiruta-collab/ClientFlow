@@ -1,4 +1,3 @@
-javascript
 require("dotenv").config({
     path: "../.env"
 });
