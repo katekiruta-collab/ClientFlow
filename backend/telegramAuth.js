@@ -9,7 +9,10 @@ function validateTelegramData(initData) {
         const botToken = process.env.BOT_TOKEN;
 
         if (!botToken) {
-            console.error("Telegram auth error: BOT_TOKEN is missing");
+            console.error(
+                "Telegram auth error: BOT_TOKEN is missing"
+            );
+
             return null;
         }
 
@@ -18,7 +21,10 @@ function validateTelegramData(initData) {
         const receivedHash = params.get("hash");
 
         if (!receivedHash) {
-            console.error("Telegram auth error: hash is missing");
+            console.error(
+                "Telegram auth error: hash is missing"
+            );
+
             return null;
         }
 
@@ -74,8 +80,7 @@ function validateTelegramData(initData) {
             return null;
         }
 
-        const userData =
-            params.get("user");
+        const userData = params.get("user");
 
         if (!userData) {
             console.error(
@@ -85,13 +90,10 @@ function validateTelegramData(initData) {
             return null;
         }
 
-        const user =
-            JSON.parse(userData);
+        const user = JSON.parse(userData);
 
         return user;
-    }
-
-    catch (error) {
+    } catch (error) {
         console.error(
             "Telegram auth error:",
             error.message

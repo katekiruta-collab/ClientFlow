@@ -75,6 +75,7 @@ async function initializeDatabase() {
             client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
             date DATE NOT NULL,
             time TIME,
+            service TEXT,
             status TEXT DEFAULT 'planned',
             price NUMERIC(10, 2) DEFAULT 0,
             notes TEXT,
@@ -99,7 +100,18 @@ async function initializeDatabase() {
         );
     `);
 
-    console.log("PostgreSQL database initialized successfully");
+    // ========================================
+    // Existing database migrations
+    // ========================================
+
+    await pool.query(`
+        ALTER TABLE appointments
+        ADD COLUMN IF NOT EXISTS service TEXT;
+    `);
+
+    console.log(
+        "PostgreSQL database initialized and migrated successfully"
+    );
 }
 
 // ========================================
@@ -180,11 +192,65 @@ async function authenticateRequest(req, res, next) {
             error.message
         );
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Authentication failed"
         });
     }
+}
+
+// ========================================
+// Helpers
+// ========================================
+
+async function verifyClientOwnership(
+    clientId,
+    userId
+) {
+    if (!clientId) {
+        return true;
+    }
+
+    const result = await pool.query(
+        `
+        SELECT id
+        FROM clients
+        WHERE id = $1
+          AND user_id = $2
+        LIMIT 1;
+        `,
+        [
+            clientId,
+            userId
+        ]
+    );
+
+    return result.rows.length > 0;
+}
+
+async function verifyAppointmentOwnership(
+    appointmentId,
+    userId
+) {
+    if (!appointmentId) {
+        return true;
+    }
+
+    const result = await pool.query(
+        `
+        SELECT id
+        FROM appointments
+        WHERE id = $1
+          AND user_id = $2
+        LIMIT 1;
+        `,
+        [
+            appointmentId,
+            userId
+        ]
+    );
+
+    return result.rows.length > 0;
 }
 
 // ========================================
@@ -194,7 +260,7 @@ async function authenticateRequest(req, res, next) {
 app.get("/", (req, res) => {
     res.json({
         status: "ClientFlow backend is running",
-        version: "1.0.0"
+        version: "1.1.0"
     });
 });
 
@@ -220,7 +286,7 @@ app.get("/api/db-test", async (req, res) => {
             error.message
         );
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             database: "PostgreSQL",
             connected: false,
@@ -257,7 +323,7 @@ app.post("/api/auth", async (req, res) => {
         const user =
             await getOrCreateUser(telegramUser);
 
-        res.json({
+        return res.json({
             success: true,
             user: telegramUser,
             databaseUser: user
@@ -268,7 +334,7 @@ app.post("/api/auth", async (req, res) => {
             error.message
         );
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Authentication failed"
         });
@@ -295,7 +361,7 @@ app.get(
                 [req.user.id]
             );
 
-            res.json({
+            return res.json({
                 success: true,
                 clients: result.rows
             });
@@ -305,7 +371,7 @@ app.get(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to get clients"
             });
@@ -354,7 +420,7 @@ app.post(
                 ]
             );
 
-            res.status(201).json({
+            return res.status(201).json({
                 success: true,
                 client: result.rows[0]
             });
@@ -364,7 +430,7 @@ app.post(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to create client"
             });
@@ -385,6 +451,13 @@ app.put(
                 notes
             } = req.body;
 
+            if (!name || !String(name).trim()) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Client name is required"
+                });
+            }
+
             const result = await pool.query(
                 `
                 UPDATE clients
@@ -399,7 +472,7 @@ app.put(
                 RETURNING *;
                 `,
                 [
-                    name,
+                    String(name).trim(),
                     phone || null,
                     email || null,
                     notes || null,
@@ -415,7 +488,7 @@ app.put(
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true,
                 client: result.rows[0]
             });
@@ -425,7 +498,7 @@ app.put(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to update client"
             });
@@ -459,7 +532,7 @@ app.delete(
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true
             });
         } catch (error) {
@@ -468,7 +541,7 @@ app.delete(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to delete client"
             });
@@ -502,7 +575,7 @@ app.get(
                 [req.user.id]
             );
 
-            res.json({
+            return res.json({
                 success: true,
                 appointments: result.rows
             });
@@ -512,7 +585,7 @@ app.get(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to get appointments"
             });
@@ -532,13 +605,27 @@ app.post(
                 time,
                 status,
                 price,
-                notes
+                notes,
+                service
             } = req.body;
 
             if (!date) {
                 return res.status(400).json({
                     success: false,
                     message: "Appointment date is required"
+                });
+            }
+
+            const clientExists =
+                await verifyClientOwnership(
+                    client_id,
+                    req.user.id
+                );
+
+            if (!clientExists) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Client does not belong to current user"
                 });
             }
 
@@ -549,11 +636,12 @@ app.post(
                     client_id,
                     date,
                     time,
+                    service,
                     status,
                     price,
                     notes
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING *;
                 `,
                 [
@@ -561,13 +649,14 @@ app.post(
                     client_id || null,
                     date,
                     time || null,
+                    service || null,
                     status || "planned",
-                    price || 0,
+                    Number(price) || 0,
                     notes || null
                 ]
             );
 
-            res.status(201).json({
+            return res.status(201).json({
                 success: true,
                 appointment: result.rows[0]
             });
@@ -577,7 +666,7 @@ app.post(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to create appointment"
             });
@@ -597,8 +686,29 @@ app.put(
                 time,
                 status,
                 price,
-                notes
+                notes,
+                service
             } = req.body;
+
+            if (!date) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Appointment date is required"
+                });
+            }
+
+            const clientExists =
+                await verifyClientOwnership(
+                    client_id,
+                    req.user.id
+                );
+
+            if (!clientExists) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Client does not belong to current user"
+                });
+            }
 
             const result = await pool.query(
                 `
@@ -607,20 +717,22 @@ app.put(
                     client_id = $1,
                     date = $2,
                     time = $3,
-                    status = $4,
-                    price = $5,
-                    notes = $6,
+                    service = $4,
+                    status = $5,
+                    price = $6,
+                    notes = $7,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = $7
-                  AND user_id = $8
+                WHERE id = $8
+                  AND user_id = $9
                 RETURNING *;
                 `,
                 [
                     client_id || null,
                     date,
                     time || null,
+                    service || null,
                     status || "planned",
-                    price || 0,
+                    Number(price) || 0,
                     notes || null,
                     req.params.id,
                     req.user.id
@@ -634,7 +746,7 @@ app.put(
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true,
                 appointment: result.rows[0]
             });
@@ -644,7 +756,7 @@ app.put(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to update appointment"
             });
@@ -678,7 +790,7 @@ app.delete(
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true
             });
         } catch (error) {
@@ -687,7 +799,7 @@ app.delete(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to delete appointment"
             });
@@ -720,7 +832,7 @@ app.get(
                 [req.user.id]
             );
 
-            res.json({
+            return res.json({
                 success: true,
                 invoices: result.rows
             });
@@ -730,7 +842,7 @@ app.get(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to get invoices"
             });
@@ -750,8 +862,35 @@ app.post(
                 amount,
                 status,
                 due_date,
+                paid_at,
                 notes
             } = req.body;
+
+            const clientExists =
+                await verifyClientOwnership(
+                    client_id,
+                    req.user.id
+                );
+
+            if (!clientExists) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Client does not belong to current user"
+                });
+            }
+
+            const appointmentExists =
+                await verifyAppointmentOwnership(
+                    appointment_id,
+                    req.user.id
+                );
+
+            if (!appointmentExists) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Appointment does not belong to current user"
+                });
+            }
 
             const result = await pool.query(
                 `
@@ -762,23 +901,25 @@ app.post(
                     amount,
                     status,
                     due_date,
+                    paid_at,
                     notes
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING *;
                 `,
                 [
                     req.user.id,
                     client_id || null,
                     appointment_id || null,
-                    amount || 0,
+                    Number(amount) || 0,
                     status || "unpaid",
                     due_date || null,
+                    paid_at || null,
                     notes || null
                 ]
             );
 
-            res.status(201).json({
+            return res.status(201).json({
                 success: true,
                 invoice: result.rows[0]
             });
@@ -788,7 +929,7 @@ app.post(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to create invoice"
             });
@@ -812,6 +953,32 @@ app.put(
                 notes
             } = req.body;
 
+            const clientExists =
+                await verifyClientOwnership(
+                    client_id,
+                    req.user.id
+                );
+
+            if (!clientExists) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Client does not belong to current user"
+                });
+            }
+
+            const appointmentExists =
+                await verifyAppointmentOwnership(
+                    appointment_id,
+                    req.user.id
+                );
+
+            if (!appointmentExists) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Appointment does not belong to current user"
+                });
+            }
+
             const result = await pool.query(
                 `
                 UPDATE invoices
@@ -831,7 +998,7 @@ app.put(
                 [
                     client_id || null,
                     appointment_id || null,
-                    amount || 0,
+                    Number(amount) || 0,
                     status || "unpaid",
                     due_date || null,
                     paid_at || null,
@@ -848,7 +1015,7 @@ app.put(
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true,
                 invoice: result.rows[0]
             });
@@ -858,7 +1025,7 @@ app.put(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to update invoice"
             });
@@ -892,7 +1059,7 @@ app.delete(
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true
             });
         } catch (error) {
@@ -901,13 +1068,44 @@ app.delete(
                 error.message
             );
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: "Failed to delete invoice"
             });
         }
     }
 );
+
+// ========================================
+// 404
+// ========================================
+
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: "Route not found"
+    });
+});
+
+// ========================================
+// Global error handler
+// ========================================
+
+app.use((error, req, res, next) => {
+    console.error(
+        "Unhandled server error:",
+        error.message
+    );
+
+    if (res.headersSent) {
+        return next(error);
+    }
+
+    res.status(500).json({
+        success: false,
+        message: "Internal server error"
+    });
+});
 
 // ========================================
 // Start server

@@ -1,8 +1,25 @@
 // ============================================================
-// ClientFlow - ПОЛНЫЙ РАБОЧИЙ КОД
+// ClientFlow - FULL APP.JS
+// PostgreSQL API VERSION
+// NO localStorage
 // ============================================================
 
 const telegramApp = window.Telegram?.WebApp || null;
+
+// ============================================================
+// API
+// ============================================================
+
+const API_BASE = "https://clientflow-production-59b4.up.railway.app/api";
+
+let telegramInitData = "";
+let clientFlowData = {
+    clients: [],
+    appointments: [],
+    invoices: []
+};
+
+let currentUser = null;
 
 // ============================================================
 // Telegram Mini App Setup
@@ -14,23 +31,43 @@ if (telegramApp) {
     telegramApp.disableVerticalSwipes?.();
 
     function setViewportHeight() {
-        const height = telegramApp.viewportStableHeight || telegramApp.viewportHeight || window.innerHeight;
-        document.documentElement.style.setProperty('--tg-viewport-stable-height', `${height}px`);
-        document.documentElement.style.setProperty('--app-height', `${height}px`);
+        const height =
+            telegramApp.viewportStableHeight ||
+            telegramApp.viewportHeight ||
+            window.innerHeight;
+
+        document.documentElement.style.setProperty(
+            "--tg-viewport-stable-height",
+            `${height}px`
+        );
+
+        document.documentElement.style.setProperty(
+            "--app-height",
+            `${height}px`
+        );
     }
-    
+
     setViewportHeight();
-    telegramApp.onEvent('viewportChanged', setViewportHeight);
-    window.addEventListener('resize', setViewportHeight);
+
+    telegramApp.onEvent("viewportChanged", setViewportHeight);
+    window.addEventListener("resize", setViewportHeight);
+
+    telegramInitData = telegramApp.initData || "";
 
     const telegramUser = telegramApp.initDataUnsafe?.user;
 
     if (telegramUser) {
         const userName = telegramUser.first_name || "Специалист";
+
         const greeting = document.querySelector(".greeting");
-        if (greeting) greeting.textContent = `Добрый день, ${userName} 👋`;
+        if (greeting) {
+            greeting.textContent = `Добрый день, ${userName} 👋`;
+        }
+
         const avatar = document.querySelector(".avatar");
-        if (avatar) avatar.textContent = userName.charAt(0).toUpperCase();
+        if (avatar) {
+            avatar.textContent = userName.charAt(0).toUpperCase();
+        }
     }
 
     window.haptic = function (type = "light") {
@@ -40,27 +77,184 @@ if (telegramApp) {
     };
 } else {
     window.haptic = function () {};
+    console.warn("Telegram WebApp is not available.");
 }
 
 // ============================================================
-// Storage
+// API REQUEST
 // ============================================================
 
-const CLIENTFLOW_STORAGE_KEY = "clientflow_data";
+async function apiRequest(endpoint, options = {}) {
+    const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+    };
 
-const clientFlowDefaultData = {
-    clients: [
-        { id: 1, name: "Анна", phone: "+375 29 000 00 00", visits: 8, total: 620, status: "Постоянный клиент", archived: false },
-        { id: 2, name: "Мария", phone: "+375 33 111 11 11", visits: 1, total: 80, status: "Новый клиент", archived: false }
-    ],
-    appointments: [
-        { id: 1, client: "Анна", time: "14:30", date: getTodayDate(), service: "Маникюр", price: 150, status: "Ожидает оплаты", archived: false },
-        { id: 2, client: "Мария", time: "16:00", date: getTodayDate(), service: "Педикюр", price: 80, status: "Оплачено", archived: true }
-    ],
-    invoices: [
-        { id: 1, client: "Анна", amount: 150, status: "Не оплачено", appointmentId: 1 }
-    ]
-};
+    if (telegramInitData) {
+        headers["X-Telegram-Init-Data"] = telegramInitData;
+    }
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers
+    });
+
+    let data = null;
+
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = null;
+    }
+
+    if (!response.ok) {
+        const message = data?.message || `HTTP ${response.status}`;
+        throw new Error(message);
+    }
+
+    return data;
+}
+
+// ============================================================
+// AUTHENTICATION
+// ============================================================
+
+async function authenticate() {
+    if (!telegramInitData) {
+        throw new Error(
+            "Telegram initData отсутствует. Откройте ClientFlow через Telegram."
+        );
+    }
+
+    const result = await apiRequest("/auth", {
+        method: "POST",
+        body: JSON.stringify({
+            initData: telegramInitData
+        })
+    });
+
+    if (!result.success) {
+        throw new Error(result.message || "Ошибка авторизации");
+    }
+
+    currentUser = result.databaseUser || result.user || null;
+    return result;
+}
+
+// ============================================================
+// LOAD ALL DATA
+// ============================================================
+
+async function loadClients() {
+    const result = await apiRequest("/clients");
+    clientFlowData.clients = Array.isArray(result.clients)
+        ? result.clients.map(normalizeClient)
+        : [];
+}
+
+async function loadAppointments() {
+    const result = await apiRequest("/appointments");
+    clientFlowData.appointments = Array.isArray(result.appointments)
+        ? result.appointments.map(normalizeAppointment)
+        : [];
+}
+
+async function loadInvoices() {
+    const result = await apiRequest("/invoices");
+    clientFlowData.invoices = Array.isArray(result.invoices)
+        ? result.invoices.map(normalizeInvoice)
+        : [];
+}
+
+async function loadAllData() {
+    await Promise.all([
+        loadClients(),
+        loadAppointments(),
+        loadInvoices()
+    ]);
+    window.clientFlowData = clientFlowData;
+}
+
+// ============================================================
+// DATA NORMALIZATION
+// ============================================================
+
+function normalizeClient(client) {
+    return {
+        id: Number(client.id),
+        name: client.name || "",
+        phone: client.phone || "",
+        email: client.email || "",
+        notes: client.notes || "",
+        visits: Number(client.visits || 0),
+        total: Number(client.total || 0),
+        status: client.status || "Новый клиент",
+        archived: Boolean(client.archived)
+    };
+}
+
+function normalizeAppointment(appointment) {
+    return {
+        id: Number(appointment.id),
+        clientId:
+            appointment.client_id !== null && appointment.client_id !== undefined
+                ? Number(appointment.client_id)
+                : null,
+        client: appointment.client_name || "",
+        time: appointment.time ? String(appointment.time).slice(0, 5) : "",
+        date: appointment.date
+            ? String(appointment.date).slice(0, 10)
+            : getTodayDate(),
+        service: appointment.service || "",
+        price: Number(appointment.price || 0),
+        status: normalizeAppointmentStatus(appointment.status),
+        archived:
+            appointment.status === "paid" ||
+            appointment.status === "Оплачено" ||
+            Boolean(appointment.archived),
+        notes: appointment.notes || ""
+    };
+}
+
+function normalizeInvoice(invoice) {
+    const dueDate = invoice.due_date ? String(invoice.due_date).slice(0, 10) : null;
+    return {
+        id: Number(invoice.id),
+        clientId:
+            invoice.client_id !== null && invoice.client_id !== undefined
+                ? Number(invoice.client_id)
+                : null,
+        client: invoice.client_name || "",
+        appointmentId:
+            invoice.appointment_id !== null && invoice.appointment_id !== undefined
+                ? Number(invoice.appointment_id)
+                : null,
+        amount: Number(invoice.amount || 0),
+        status: normalizeInvoiceStatus(invoice.status),
+        dueDate: dueDate,
+        paidAt: invoice.paid_at || null,
+        date: dueDate,
+        notes: invoice.notes || ""
+    };
+}
+
+function normalizeAppointmentStatus(status) {
+    if (status === "paid" || status === "Оплачено") {
+        return "Оплачено";
+    }
+    return "Ожидает оплаты";
+}
+
+function normalizeInvoiceStatus(status) {
+    if (status === "paid" || status === "Оплачено") {
+        return "Оплачено";
+    }
+    return "Не оплачено";
+}
+
+// ============================================================
+// DATE / FORMAT HELPERS
+// ============================================================
 
 function getTodayDate() {
     const now = new Date();
@@ -72,106 +266,106 @@ function getTodayDate() {
 
 function formatDate(dateString) {
     if (!dateString) return "";
-    const parts = dateString.split("-");
+    const parts = String(dateString).split("-");
     if (parts.length !== 3) return dateString;
     return `${parts[2]}.${parts[1]}.${parts[0]}`;
 }
 
 function getMonthName(year, month) {
-    return new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }).format(new Date(year, month, 1));
+    return new Intl.DateTimeFormat("ru-RU", {
+        month: "long",
+        year: "numeric"
+    }).format(new Date(year, month, 1));
 }
-
-function generateId() {
-    return Date.now() + Math.floor(Math.random() * 1000);
-}
-
-function clientFlowLoadData() {
-    const saved = localStorage.getItem(CLIENTFLOW_STORAGE_KEY);
-    if (saved) {
-        try {
-            const parsed = JSON.parse(saved);
-            if (!Array.isArray(parsed.clients)) parsed.clients = [];
-            if (!Array.isArray(parsed.appointments)) parsed.appointments = [];
-            if (!Array.isArray(parsed.invoices)) parsed.invoices = [];
-
-            parsed.clients.forEach(client => { if (typeof client.archived === "undefined") client.archived = false; });
-            parsed.appointments.forEach(appointment => {
-                if (!appointment.date) appointment.date = getTodayDate();
-                if (!appointment.status) appointment.status = "Ожидает оплаты";
-                if (typeof appointment.archived === "undefined") appointment.archived = appointment.status === "Оплачено";
-            });
-            parsed.invoices.forEach(invoice => {
-                if (!invoice.status) invoice.status = "Не оплачено";
-                if (typeof invoice.appointmentId === "undefined" && invoice.id === 1) invoice.appointmentId = 1;
-            });
-
-            localStorage.setItem(CLIENTFLOW_STORAGE_KEY, JSON.stringify(parsed));
-            return parsed;
-        } catch (error) {
-            console.error("ClientFlow storage error:", error);
-        }
-    }
-    const initialData = JSON.parse(JSON.stringify(clientFlowDefaultData));
-    localStorage.setItem(CLIENTFLOW_STORAGE_KEY, JSON.stringify(initialData));
-    return initialData;
-}
-
-const clientFlowData = clientFlowLoadData();
-window.clientFlowData = clientFlowData;
-
-function clientFlowSaveData() {
-    localStorage.setItem(CLIENTFLOW_STORAGE_KEY, JSON.stringify(clientFlowData));
-}
-
-window.saveClientFlowData = clientFlowSaveData;
-
-const today = new Date();
-let calendarYear = today.getFullYear();
-let calendarMonth = today.getMonth();
-let selectedDate = getTodayDate();
 
 function escapeHtml(value) {
-    return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
 }
 
-function findClient(id) { return clientFlowData.clients.find(c => Number(c.id) === Number(id)); }
-function findAppointment(id) { return clientFlowData.appointments.find(a => Number(a.id) === Number(id)); }
-function findInvoice(id) { return clientFlowData.invoices.find(i => Number(i.id) === Number(id)); }
-function findInvoiceForAppointment(appointmentId) { return clientFlowData.invoices.find(i => Number(i.appointmentId) === Number(appointmentId)); }
+// ============================================================
+// FIND HELPERS
+// ============================================================
+
+function findClient(id) {
+    return clientFlowData.clients.find(
+        client => Number(client.id) === Number(id)
+    );
+}
+
+function findAppointment(id) {
+    return clientFlowData.appointments.find(
+        appointment => Number(appointment.id) === Number(id)
+    );
+}
+
+function findInvoice(id) {
+    return clientFlowData.invoices.find(
+        invoice => Number(invoice.id) === Number(id)
+    );
+}
+
+function findInvoiceForAppointment(appointmentId) {
+    return clientFlowData.invoices.find(
+        invoice => Number(invoice.appointmentId) === Number(appointmentId)
+    );
+}
+
+// ============================================================
+// UI NAVIGATION
+// ============================================================
 
 function openScreen(screenName) {
-    document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+    document.querySelectorAll(".screen").forEach(screen => {
+        screen.classList.remove("active");
+    });
+
     const target = document.getElementById(`${screenName}-screen`);
-    if (target) target.classList.add("active");
+    if (target) {
+        target.classList.add("active");
+    }
 
     document.querySelectorAll(".nav-btn").forEach(button => {
         button.classList.remove("active");
-        if (button.dataset.screen === screenName) button.classList.add("active");
+        if (button.dataset.screen === screenName) {
+            button.classList.add("active");
+        }
     });
 
     if (screenName === "dashboard") renderDashboard();
-    else if (screenName === "clients") renderClients();
-    else if (screenName === "appointments") { renderCalendar(); renderAppointments(); }
-    else if (screenName === "invoices") renderInvoices();
+    if (screenName === "clients") renderClients();
+    if (screenName === "appointments") {
+        renderCalendar();
+        renderAppointments();
+    }
+    if (screenName === "invoices") renderInvoices();
 }
 
-document.querySelectorAll(".nav-btn").forEach(button => {
-    button.addEventListener("click", () => { window.haptic("light"); openScreen(button.dataset.screen); });
-});
-
-document.querySelectorAll(".action-card").forEach(button => {
-    button.addEventListener("click", () => { window.haptic("light"); openScreen(button.dataset.screen); });
-});
+// ============================================================
+// DASHBOARD
+// ============================================================
 
 function renderDashboard() {
     const todayCard = document.querySelector(".today-card");
     if (!todayCard) return;
 
     const appointments = clientFlowData.appointments || [];
-    const todayAppointments = appointments.filter(a => a.date === getTodayDate());
+    const todayAppointments = appointments.filter(
+        appointment => appointment.date === getTodayDate()
+    );
+
     const appointmentCount = todayAppointments.length;
-    const expectedIncome = todayAppointments.reduce((sum, a) => sum + Number(a.price || 0), 0);
-    const actualIncome = todayAppointments.filter(a => a.status === "Оплачено").reduce((sum, a) => sum + Number(a.price || 0), 0);
+    const expectedIncome = todayAppointments.reduce(
+        (sum, appointment) => sum + Number(appointment.price || 0),
+        0
+    );
+    const actualIncome = todayAppointments
+        .filter(appointment => appointment.status === "Оплачено")
+        .reduce((sum, appointment) => sum + Number(appointment.price || 0), 0);
 
     const stats = todayCard.querySelectorAll(".stat strong");
     if (stats[0]) stats[0].textContent = appointmentCount;
@@ -181,11 +375,19 @@ function renderDashboard() {
     const nextCard = document.querySelector(".next-card");
     if (!nextCard) return;
 
-    const activeToday = todayAppointments.filter(a => a.archived !== true && a.status !== "Оплачено").sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
+    const activeToday = todayAppointments
+        .filter(appointment => appointment.status !== "Оплачено")
+        .sort((a, b) =>
+            String(a.time || "").localeCompare(String(b.time || ""))
+        );
+
     const nextAppointment = activeToday.length > 0 ? activeToday[0] : null;
 
     if (!nextAppointment) {
-        nextCard.innerHTML = `<p class="label">Сегодня</p><div class="empty-dashboard">Нет предстоящих записей</div>`;
+        nextCard.innerHTML = `
+            <p class="label">Сегодня</p>
+            <div class="empty-dashboard">Нет предстоящих записей</div>
+        `;
         return;
     }
 
@@ -201,24 +403,35 @@ function renderDashboard() {
                 <strong>${Number(nextAppointment.price || 0)} €</strong>
             </div>
         </div>
-        <button class="primary-btn" type="button" data-dashboard-open="appointments">Открыть записи</button>
+        <button class="primary-btn" type="button" data-dashboard-open="appointments">
+            Открыть записи
+        </button>
     `;
 
-    nextCard.querySelector("[data-dashboard-open]")?.addEventListener("click", () => openScreen("appointments"));
+    nextCard
+        .querySelector("[data-dashboard-open]")
+        ?.addEventListener("click", () => openScreen("appointments"));
 }
+
+// ============================================================
+// CLIENTS
+// ============================================================
 
 function renderClients() {
     const container = document.querySelector("#clients-screen .list");
     if (!container) return;
+
     container.innerHTML = "";
 
-    const activeClients = clientFlowData.clients.filter(c => !c.archived);
-    const archivedClients = clientFlowData.clients.filter(c => c.archived);
+    const activeClients = clientFlowData.clients.filter(client => !client.archived);
+    const archivedClients = clientFlowData.clients.filter(client => client.archived);
 
     if (activeClients.length === 0) {
         container.innerHTML = `<div class="empty-state">Клиентов пока нет</div>`;
     } else {
-        activeClients.forEach(client => container.appendChild(createClientCard(client, false)));
+        activeClients.forEach(client =>
+            container.appendChild(createClientCard(client, false))
+        );
     }
 
     if (archivedClients.length > 0) {
@@ -226,7 +439,10 @@ function renderClients() {
         title.className = "section-subtitle";
         title.textContent = "Архив";
         container.appendChild(title);
-        archivedClients.forEach(client => container.appendChild(createClientCard(client, true)));
+
+        archivedClients.forEach(client =>
+            container.appendChild(createClientCard(client, true))
+        );
     }
 }
 
@@ -241,27 +457,48 @@ function createClientCard(client, archived) {
             <p>📞 ${escapeHtml(client.phone || "")}</p>
             <span class="client-status">${escapeHtml(client.status || "")}</span>
             <div class="card-actions">
-                <button class="small-btn edit-btn" type="button" data-action="edit-client" data-id="${client.id}">Редактировать</button>
-                ${archived ? `
-                    <button class="small-btn restore-btn" type="button" data-action="restore-client" data-id="${client.id}">Вернуть</button>
-                ` : `
-                    <button class="small-btn archive-btn" type="button" data-action="archive-client" data-id="${client.id}">В архив</button>
-                `}
-                <button class="small-btn danger-btn" type="button" data-action="delete-client" data-id="${client.id}">Удалить</button>
+                <button class="small-btn edit-btn" type="button" data-action="edit-client" data-id="${client.id}">
+                    Редактировать
+                </button>
+                ${
+                    archived
+                        ? `
+                        <button class="small-btn restore-btn" type="button" data-action="restore-client" data-id="${client.id}">
+                            Вернуть
+                        </button>`
+                        : `
+                        <button class="small-btn archive-btn" type="button" data-action="archive-client" data-id="${client.id}">
+                            В архив
+                        </button>`
+                }
+                <button class="small-btn danger-btn" type="button" data-action="delete-client" data-id="${client.id}">
+                    Удалить
+                </button>
             </div>
         </div>
     `;
     return card;
 }
 
+// ============================================================
+// CALENDAR
+// ============================================================
+
+const today = new Date();
+let calendarYear = today.getFullYear();
+let calendarMonth = today.getMonth();
+let selectedDate = getTodayDate();
+
 function renderCalendar() {
     const calendar = document.getElementById("appointments-calendar");
     if (!calendar) return;
+
     const title = document.getElementById("calendar-month-title");
     if (title) title.textContent = getMonthName(calendarYear, calendarMonth);
 
     const grid = document.getElementById("calendar-grid");
     if (!grid) return;
+
     grid.innerHTML = "";
 
     const weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -275,6 +512,7 @@ function renderCalendar() {
     const firstDay = new Date(calendarYear, calendarMonth, 1);
     let startDay = firstDay.getDay();
     startDay = startDay === 0 ? 6 : startDay - 1;
+
     const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
     const appointments = clientFlowData.appointments || [];
 
@@ -289,16 +527,32 @@ function renderCalendar() {
         const dayButton = document.createElement("button");
         dayButton.type = "button";
         dayButton.className = "calendar-day";
+
         if (dateString === getTodayDate()) dayButton.classList.add("today");
         if (dateString === selectedDate) dayButton.classList.add("selected");
 
-        const dayAppointments = appointments.filter(a => a.date === dateString);
-        const unpaidCount = dayAppointments.filter(a => a.status !== "Оплачено").length;
+        const dayAppointments = appointments.filter(
+            appointment => appointment.date === dateString
+        );
+        const unpaidCount = dayAppointments.filter(
+            appointment => appointment.status !== "Оплачено"
+        ).length;
 
         dayButton.innerHTML = `
             <span class="calendar-day-number">${day}</span>
-            ${dayAppointments.length > 0 ? `<span class="calendar-dots">${dayAppointments.slice(0, 3).map(() => "<i></i>").join("")}</span>` : ""}
-            ${unpaidCount > 0 ? `<span class="calendar-count">${unpaidCount}</span>` : ""}
+            ${
+                dayAppointments.length > 0
+                    ? `<span class="calendar-dots">${dayAppointments
+                          .slice(0, 3)
+                          .map(() => "<i></i>")
+                          .join("")}</span>`
+                    : ""
+            }
+            ${
+                unpaidCount > 0
+                    ? `<span class="calendar-count">${unpaidCount}</span>`
+                    : ""
+            }
         `;
 
         dayButton.addEventListener("click", () => {
@@ -307,33 +561,50 @@ function renderCalendar() {
             renderCalendar();
             renderAppointments();
         });
+
         grid.appendChild(dayButton);
     }
 }
 
 function changeCalendarMonth(direction) {
     calendarMonth += direction;
-    if (calendarMonth < 0) { calendarMonth = 11; calendarYear--; }
-    if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
+    if (calendarMonth < 0) {
+        calendarMonth = 11;
+        calendarYear--;
+    }
+    if (calendarMonth > 11) {
+        calendarMonth = 0;
+        calendarYear++;
+    }
     selectedDate = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-01`;
     renderCalendar();
     renderAppointments();
 }
 
+// ============================================================
+// APPOINTMENTS
+// ============================================================
+
 function renderAppointments() {
     const container = document.querySelector("#appointments-screen .list");
     if (!container) return;
+
     container.innerHTML = "";
 
-    const appointments = (clientFlowData.appointments || []).filter(a => a.date === selectedDate).sort((a, b) => {
-        const aPaid = a.status === "Оплачено";
-        const bPaid = b.status === "Оплачено";
-        if (aPaid !== bPaid) return aPaid ? 1 : -1;
-        return String(a.time || "").localeCompare(String(b.time || ""));
-    });
+    const appointments = (clientFlowData.appointments || [])
+        .filter(appointment => appointment.date === selectedDate)
+        .sort((a, b) => {
+            const aPaid = a.status === "Оплачено";
+            const bPaid = b.status === "Оплачено";
+            if (aPaid !== bPaid) return aPaid ? 1 : -1;
+            return String(a.time || "").localeCompare(String(b.time || ""));
+        });
 
     const selectedTitle = document.getElementById("selected-date-title");
-    if (selectedTitle) selectedTitle.textContent = selectedDate === getTodayDate() ? "Сегодня" : formatDate(selectedDate);
+    if (selectedTitle) {
+        selectedTitle.textContent =
+            selectedDate === getTodayDate() ? "Сегодня" : formatDate(selectedDate);
+    }
 
     if (appointments.length === 0) {
         container.innerHTML = `<div class="empty-state">На этот день записей нет</div>`;
@@ -347,17 +618,28 @@ function renderAppointments() {
         if (paid) card.classList.add("appointment-completed");
 
         const invoice = findInvoiceForAppointment(item.id);
+
         card.innerHTML = `
             <div class="appointment-time">${escapeHtml(item.time || "--:--")}</div>
             <div class="appointment-info">
                 <h3>${escapeHtml(item.client || "")}</h3>
-                <p>${escapeHtml(item.service || "")} · ${Number(item.price || 0)} €</p>
-                <span class="appointment-status ${paid ? "appointment-paid" : ""}">${paid ? "Оплачено" : "Ожидает оплаты"}</span>
+                <p>
+                    ${escapeHtml(item.service || "")} · ${Number(item.price || 0)} €
+                </p>
+                <span class="appointment-status ${paid ? "appointment-paid" : ""}">
+                    ${paid ? "Оплачено" : "Ожидает оплаты"}
+                </span>
                 <div class="card-actions">
-                    <button class="small-btn ${paid ? "invoice-status-btn" : "pay-btn"}" type="button" data-action="pay-appointment" data-id="${item.id}">${paid ? "Отменить оплату" : "Оплата"}</button>
-                    <button class="small-btn edit-btn" type="button" data-action="edit-appointment" data-id="${item.id}">Редактировать</button>
+                    <button class="small-btn ${paid ? "invoice-status-btn" : "pay-btn"}" type="button" data-action="pay-appointment" data-id="${item.id}">
+                        ${paid ? "Отменить оплату" : "Оплата"}
+                    </button>
+                    <button class="small-btn edit-btn" type="button" data-action="edit-appointment" data-id="${item.id}">
+                        Редактировать
+                    </button>
                     ${invoice ? `<span class="invoice-link-note">Счёт #${invoice.id}</span>` : ""}
-                    <button class="small-btn danger-btn" type="button" data-action="delete-appointment" data-id="${item.id}">Удалить</button>
+                    <button class="small-btn danger-btn" type="button" data-action="delete-appointment" data-id="${item.id}">
+                        Удалить
+                    </button>
                 </div>
             </div>
         `;
@@ -365,46 +647,462 @@ function renderAppointments() {
     });
 }
 
-function payAppointment(id) {
+// ============================================================
+// CLIENTS CRUD
+// ============================================================
+
+async function createClient(name, phone) {
+    const result = await apiRequest("/clients", {
+        method: "POST",
+        body: JSON.stringify({ name, phone })
+    });
+    const client = normalizeClient(result.client);
+    clientFlowData.clients.push(client);
+    return client;
+}
+
+async function updateClient(id, name, phone) {
+    const result = await apiRequest(`/clients/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name, phone })
+    });
+    const updated = normalizeClient(result.client);
+    const index = clientFlowData.clients.findIndex(
+        client => Number(client.id) === Number(id)
+    );
+    if (index !== -1) clientFlowData.clients[index] = updated;
+    return updated;
+}
+
+function archiveClient(id) {
+    const client = findClient(id);
+    if (!client) return;
+    client.archived = true;
+    renderClients();
+    renderDashboard();
+}
+
+function restoreClient(id) {
+    const client = findClient(id);
+    if (!client) return;
+    client.archived = false;
+    renderClients();
+    renderDashboard();
+}
+
+async function deleteClient(id) {
+    await apiRequest(`/clients/${id}`, { method: "DELETE" });
+
+    clientFlowData.clients = clientFlowData.clients.filter(
+        client => Number(client.id) !== Number(id)
+    );
+    clientFlowData.appointments = clientFlowData.appointments.filter(
+        appointment => Number(appointment.clientId) !== Number(id)
+    );
+    clientFlowData.invoices = clientFlowData.invoices.filter(
+        invoice => Number(invoice.clientId) !== Number(id)
+    );
+
+    renderClients();
+    renderAppointments();
+    renderInvoices();
+    renderDashboard();
+}
+
+// ============================================================
+// CLIENT FORMS
+// ============================================================
+
+function openClientForm() {
+    openModal(`
+        <h2>Новый клиент</h2>
+        <input id="client-name" type="text" placeholder="Имя">
+        <input id="client-phone" type="tel" placeholder="Телефон">
+        <button class="primary-btn" id="save-client" type="button">Сохранить</button>
+    `);
+
+    document.getElementById("save-client").addEventListener("click", async function () {
+        const name = document.getElementById("client-name").value.trim();
+        const phone = document.getElementById("client-phone").value.trim();
+
+        if (!name) {
+            document.getElementById("client-name").focus();
+            return;
+        }
+
+        try {
+            await createClient(name, phone);
+            renderClients();
+            renderDashboard();
+            closeModal();
+            window.haptic("light");
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+}
+
+function openClientEditForm(id) {
+    const client = findClient(id);
+    if (!client) return;
+
+    openModal(`
+        <h2>Редактировать клиента</h2>
+        <input id="edit-client-name" type="text" value="${escapeHtml(client.name)}" placeholder="Имя">
+        <input id="edit-client-phone" type="tel" value="${escapeHtml(client.phone || "")}" placeholder="Телефон">
+        <button class="primary-btn" id="update-client" type="button">Сохранить изменения</button>
+    `);
+
+    document.getElementById("update-client").addEventListener("click", async function () {
+        const name = document.getElementById("edit-client-name").value.trim();
+        const phone = document.getElementById("edit-client-phone").value.trim();
+
+        if (!name) return;
+
+        try {
+            await updateClient(id, name, phone);
+
+            clientFlowData.appointments
+                .filter(appointment => Number(appointment.clientId) === Number(id))
+                .forEach(appointment => {
+                    appointment.client = name;
+                });
+
+            clientFlowData.invoices
+                .filter(invoice => Number(invoice.clientId) === Number(id))
+                .forEach(invoice => {
+                    invoice.client = name;
+                });
+
+            renderClients();
+            renderAppointments();
+            renderInvoices();
+            renderDashboard();
+            closeModal();
+            window.haptic("light");
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+}
+
+// ============================================================
+// APPOINTMENTS CRUD
+// ============================================================
+
+async function createAppointment(clientId, date, time, price, notes, service) {
+    const result = await apiRequest("/appointments", {
+        method: "POST",
+        body: JSON.stringify({
+            client_id: clientId || null,
+            date,
+            time: time || null,
+            status: "planned",
+            price: Number(price) || 0,
+            notes: notes || null,
+            service: service || null
+        })
+    });
+
+    const created = normalizeAppointment(result.appointment);
+    const client = clientId ? findClient(clientId) : null;
+    if (client) created.client = client.name;
+
+    clientFlowData.appointments.push(created);
+    return created;
+}
+
+async function updateAppointment(id, clientId, date, time, price, notes, status, service) {
+    const result = await apiRequest(`/appointments/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+            client_id: clientId || null,
+            date,
+            time: time || null,
+            status: status === "Оплачено" ? "paid" : "planned",
+            price: Number(price) || 0,
+            notes: notes || null,
+            service: service || null
+        })
+    });
+
+    const updated = normalizeAppointment(result.appointment);
+    const client = clientId ? findClient(clientId) : null;
+    if (client) updated.client = client.name;
+
+    const index = clientFlowData.appointments.findIndex(
+        appointment => Number(appointment.id) === Number(id)
+    );
+    if (index !== -1) clientFlowData.appointments[index] = updated;
+
+    return updated;
+}
+
+function openAppointmentForm() {
+    const clientOptions = clientFlowData.clients
+        .filter(client => !client.archived)
+        .map(
+            client =>
+                `<option value="${client.id}">${escapeHtml(client.name)}</option>`
+        )
+        .join("");
+
+    openModal(`
+        <h2>Новая запись</h2>
+        <select id="appointment-client">
+            <option value="">Выберите клиента</option>
+            ${clientOptions}
+        </select>
+        <input id="appointment-service" type="text" placeholder="Услуга">
+        <input id="appointment-date" type="date" value="${selectedDate}">
+        <input id="appointment-time" type="time">
+        <input id="appointment-price" type="number" min="0" placeholder="Цена">
+        <button class="primary-btn" id="save-appointment" type="button">Создать запись</button>
+    `);
+
+    document.getElementById("save-appointment").addEventListener("click", async function () {
+        const clientId = Number(document.getElementById("appointment-client").value) || null;
+        const service = document.getElementById("appointment-service").value.trim();
+        const date = document.getElementById("appointment-date").value || getTodayDate();
+        const time = document.getElementById("appointment-time").value;
+        const price = Number(document.getElementById("appointment-price").value) || 0;
+
+        if (!clientId) {
+            document.getElementById("appointment-client").focus();
+            return;
+        }
+
+        try {
+            await createAppointment(clientId, date, time, price, null, service);
+            selectedDate = date;
+
+            const createdDate = new Date(`${date}T12:00:00`);
+            calendarYear = createdDate.getFullYear();
+            calendarMonth = createdDate.getMonth();
+
+            renderCalendar();
+            renderAppointments();
+            renderDashboard();
+            closeModal();
+            window.haptic("light");
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+}
+
+function openAppointmentEditForm(id) {
     const appointment = findAppointment(id);
     if (!appointment) return;
 
-    if (appointment.status === "Оплачено") {
-        const invoice = findInvoiceForAppointment(appointment.id);
-        if (invoice) invoice.status = "Не оплачено";
-        appointment.status = "Ожидает оплаты";
-        appointment.archived = false;
-        clientFlowSaveData();
+    const clientOptions = clientFlowData.clients
+        .filter(
+            client =>
+                !client.archived || Number(client.id) === Number(appointment.clientId)
+        )
+        .map(
+            client => `
+                <option value="${client.id}" ${
+                Number(client.id) === Number(appointment.clientId) ? "selected" : ""
+            }>
+                    ${escapeHtml(client.name)}
+                </option>
+            `
+        )
+        .join("");
+
+    openModal(`
+        <h2>Редактировать запись</h2>
+        <select id="edit-appointment-client">
+            <option value="">Выберите клиента</option>
+            ${clientOptions}
+        </select>
+        <input id="edit-appointment-service" type="text" value="${escapeHtml(appointment.service || "")}" placeholder="Услуга">
+        <input id="edit-appointment-date" type="date" value="${escapeHtml(appointment.date || getTodayDate())}">
+        <input id="edit-appointment-time" type="time" value="${escapeHtml(appointment.time || "")}">
+        <input id="edit-appointment-price" type="number" min="0" value="${Number(appointment.price) || 0}" placeholder="Цена">
+        <button class="primary-btn" id="update-appointment" type="button">Сохранить изменения</button>
+    `);
+
+    document.getElementById("update-appointment").addEventListener("click", async function () {
+        const clientId = Number(document.getElementById("edit-appointment-client").value) || null;
+        const service = document.getElementById("edit-appointment-service").value.trim();
+        const date = document.getElementById("edit-appointment-date").value || getTodayDate();
+        const time = document.getElementById("edit-appointment-time").value;
+        const price = Number(document.getElementById("edit-appointment-price").value) || 0;
+
+        if (!clientId) return;
+
+        const oldDate = appointment.date;
+
+        try {
+            await updateAppointment(
+                id, clientId, date, time, price,
+                appointment.notes, appointment.status, service
+            );
+
+            const invoice = findInvoiceForAppointment(id);
+
+            if (invoice) {
+                invoice.clientId = clientId;
+                const client = findClient(clientId);
+                invoice.client = client ? client.name : "";
+                invoice.amount = price;
+                invoice.date = date;
+                invoice.dueDate = date;
+
+                // Сохраняем изменения связанного счета на сервере
+                await updateInvoice(invoice.id, {
+                    clientId: clientId,
+                    appointmentId: invoice.appointmentId,
+                    amount: price,
+                    status: invoice.status,
+                    dueDate: date,
+                    paidAt: invoice.paidAt,
+                    notes: invoice.notes
+                });
+            }
+
+            if (oldDate !== date) {
+                selectedDate = date;
+                const newDate = new Date(`${date}T12:00:00`);
+                calendarYear = newDate.getFullYear();
+                calendarMonth = newDate.getMonth();
+            }
+
+            renderCalendar();
+            renderAppointments();
+            renderInvoices();
+            renderDashboard();
+            closeModal();
+            window.haptic("light");
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+}
+
+async function deleteAppointment(id) {
+    await apiRequest(`/appointments/${id}`, { method: "DELETE" });
+
+    clientFlowData.appointments = clientFlowData.appointments.filter(
+        appointment => Number(appointment.id) !== Number(id)
+    );
+
+    clientFlowData.invoices.forEach(invoice => {
+        if (Number(invoice.appointmentId) === Number(id)) {
+            invoice.appointmentId = null;
+        }
+    });
+
+    renderCalendar();
+    renderAppointments();
+    renderInvoices();
+    renderDashboard();
+}
+
+async function payAppointment(id) {
+    const appointment = findAppointment(id);
+    if (!appointment) return;
+
+    const existingInvoice = findInvoiceForAppointment(appointment.id);
+
+    try {
+        if (appointment.status === "Оплачено") {
+            await updateAppointment(
+                appointment.id, appointment.clientId, appointment.date, appointment.time,
+                appointment.price, appointment.notes, "Ожидает оплаты", appointment.service
+            );
+
+            if (existingInvoice) {
+                await updateInvoice(existingInvoice.id, {
+                    clientId: existingInvoice.clientId,
+                    appointmentId: existingInvoice.appointmentId,
+                    amount: existingInvoice.amount,
+                    status: "Не оплачено",
+                    dueDate: existingInvoice.dueDate,
+                    paidAt: null,
+                    notes: existingInvoice.notes
+                });
+            }
+        } else {
+            if (!existingInvoice) {
+                const result = await apiRequest("/invoices", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        client_id: appointment.clientId,
+                        appointment_id: appointment.id,
+                        amount: Number(appointment.price || 0),
+                        status: "paid",
+                        due_date: appointment.date,
+                        notes: null
+                    })
+                });
+
+                const invoice = normalizeInvoice(result.invoice);
+                invoice.client = appointment.client;
+                clientFlowData.invoices.push(invoice);
+            } else {
+                await updateInvoice(existingInvoice.id, {
+                    clientId: appointment.clientId,
+                    appointmentId: appointment.id,
+                    amount: appointment.price,
+                    status: "Оплачено",
+                    dueDate: appointment.date,
+                    paidAt: new Date().toISOString(),
+                    notes: existingInvoice.notes
+                });
+            }
+
+            await updateAppointment(
+                appointment.id, appointment.clientId, appointment.date, appointment.time,
+                appointment.price, appointment.notes, "Оплачено", appointment.service
+            );
+        }
+
         renderAppointments();
         renderInvoices();
         renderDashboard();
         window.haptic("light");
-        return;
+    } catch (error) {
+        showError(error.message);
     }
+}
 
-    let invoice = findInvoiceForAppointment(appointment.id);
-    if (!invoice) {
-        invoice = { id: generateId(), client: appointment.client, amount: Number(appointment.price || 0), status: "Оплачено", appointmentId: appointment.id, date: appointment.date };
-        clientFlowData.invoices.push(invoice);
-    } else {
-        invoice.client = appointment.client;
-        invoice.amount = Number(appointment.price || 0);
-        invoice.status = "Оплачено";
-        invoice.date = appointment.date;
-    }
+// ============================================================
+// INVOICES CRUD
+// ============================================================
 
-    appointment.status = "Оплачено";
-    appointment.archived = true;
-    clientFlowSaveData();
-    renderAppointments();
-    renderInvoices();
-    renderDashboard();
-    window.haptic("light");
+async function updateInvoice(id, data) {
+    const result = await apiRequest(`/invoices/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+            client_id: data.clientId || null,
+            appointment_id: data.appointmentId || null,
+            amount: Number(data.amount || 0),
+            status: data.status === "Оплачено" ? "paid" : "unpaid",
+            due_date: data.dueDate || null,
+            paid_at: data.paidAt || null,
+            notes: data.notes || null
+        })
+    });
+
+    const updated = normalizeInvoice(result.invoice);
+    const client = data.clientId ? findClient(data.clientId) : null;
+    if (client) updated.client = client.name;
+
+    const index = clientFlowData.invoices.findIndex(
+        invoice => Number(invoice.id) === Number(id)
+    );
+    if (index !== -1) clientFlowData.invoices[index] = updated;
+
+    return updated;
 }
 
 function renderInvoices() {
     const container = document.querySelector("#invoices-screen .list");
     if (!container) return;
+
     container.innerHTML = "";
 
     const invoices = (clientFlowData.invoices || []).slice().sort((a, b) => {
@@ -434,12 +1132,24 @@ function renderInvoices() {
                     </div>
                     <strong>${Number(invoice.amount || 0)} €</strong>
                 </div>
-                <span class="invoice-status ${paid ? "paid" : "unpaid"}">${paid ? "Оплачено" : "Не оплачено"}</span>
-                ${invoice.date ? `<div class="invoice-date">${formatDate(invoice.date)}</div>` : ""}
+                <span class="invoice-status ${paid ? "paid" : "unpaid"}">
+                    ${paid ? "Оплачено" : "Не оплачено"}
+                </span>
+                ${
+                    invoice.date
+                        ? `<div class="invoice-date">${formatDate(invoice.date)}</div>`
+                        : ""
+                }
                 <div class="card-actions">
-                    <button class="small-btn edit-btn" type="button" data-action="edit-invoice" data-id="${invoice.id}">Редактировать</button>
-                    <button class="small-btn invoice-status-btn" type="button" data-action="toggle-invoice" data-id="${invoice.id}">${paid ? "Отменить оплату" : "Оплатить"}</button>
-                    <button class="small-btn danger-btn" type="button" data-action="delete-invoice" data-id="${invoice.id}">Удалить</button>
+                    <button class="small-btn edit-btn" type="button" data-action="edit-invoice" data-id="${invoice.id}">
+                        Редактировать
+                    </button>
+                    <button class="small-btn invoice-status-btn" type="button" data-action="toggle-invoice" data-id="${invoice.id}">
+                        ${paid ? "Отменить оплату" : "Оплатить"}
+                    </button>
+                    <button class="small-btn danger-btn" type="button" data-action="delete-invoice" data-id="${invoice.id}">
+                        Удалить
+                    </button>
                 </div>
             </div>
         `;
@@ -447,8 +1157,233 @@ function renderInvoices() {
     });
 }
 
+async function createInvoice(clientId, amount) {
+    const result = await apiRequest("/invoices", {
+        method: "POST",
+        body: JSON.stringify({
+            client_id: clientId || null,
+            appointment_id: null,
+            amount: Number(amount),
+            status: "unpaid",
+            due_date: getTodayDate(),
+            notes: null
+        })
+    });
+
+    const invoice = normalizeInvoice(result.invoice);
+    const client = clientId ? findClient(clientId) : null;
+    if (client) invoice.client = client.name;
+
+    clientFlowData.invoices.push(invoice);
+    return invoice;
+}
+
+function openInvoiceForm() {
+    const clientOptions = clientFlowData.clients
+        .filter(client => !client.archived)
+        .map(
+            client =>
+                `<option value="${client.id}">${escapeHtml(client.name)}</option>`
+        )
+        .join("");
+
+    openModal(`
+        <h2>Новый счёт</h2>
+        <select id="invoice-client">
+            <option value="">Выберите клиента</option>
+            ${clientOptions}
+        </select>
+        <input id="invoice-amount" type="number" min="0" placeholder="Сумма">
+        <button class="primary-btn" id="save-invoice" type="button">Создать счёт</button>
+    `);
+
+    document.getElementById("save-invoice").addEventListener("click", async function () {
+        const clientId = Number(document.getElementById("invoice-client").value) || null;
+        const amount = Number(document.getElementById("invoice-amount").value) || 0;
+
+        if (!clientId) {
+            document.getElementById("invoice-client").focus();
+            return;
+        }
+        if (amount <= 0) {
+            document.getElementById("invoice-amount").focus();
+            return;
+        }
+
+        try {
+            await createInvoice(clientId, amount);
+            renderInvoices();
+            renderDashboard();
+            closeModal();
+            window.haptic("light");
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+}
+
+function openInvoiceEditForm(id) {
+    const invoice = findInvoice(id);
+    if (!invoice) return;
+
+    const clientOptions = clientFlowData.clients
+        .map(
+            client => `
+                <option value="${client.id}" ${
+                Number(client.id) === Number(invoice.clientId) ? "selected" : ""
+            }>
+                    ${escapeHtml(client.name)}
+                </option>
+            `
+        )
+        .join("");
+
+    openModal(`
+        <h2>Редактировать счёт</h2>
+        <select id="edit-invoice-client">
+            <option value="">Выберите клиента</option>
+            ${clientOptions}
+        </select>
+        <input id="edit-invoice-amount" type="number" min="0" value="${Number(invoice.amount) || 0}" placeholder="Сумма">
+        <button class="primary-btn" id="update-invoice" type="button">Сохранить изменения</button>
+    `);
+
+    document.getElementById("update-invoice").addEventListener("click", async function () {
+        const clientId = Number(document.getElementById("edit-invoice-client").value) || null;
+        const amount = Number(document.getElementById("edit-invoice-amount").value) || 0;
+
+        if (!clientId) return;
+        if (amount <= 0) return;
+
+        try {
+            await updateInvoice(id, {
+                clientId,
+                appointmentId: invoice.appointmentId,
+                amount,
+                status: invoice.status,
+                dueDate: invoice.dueDate,
+                paidAt: invoice.paidAt,
+                notes: invoice.notes
+            });
+
+            if (invoice.appointmentId) {
+                const appointment = findAppointment(invoice.appointmentId);
+                if (appointment) {
+                    appointment.clientId = clientId;
+                    const client = findClient(clientId);
+                    appointment.client = client ? client.name : "";
+                    appointment.price = amount;
+
+                    await updateAppointment(
+                        appointment.id, clientId, appointment.date, appointment.time,
+                        amount, appointment.notes, appointment.status, appointment.service
+                    );
+                }
+            }
+
+            renderInvoices();
+            renderAppointments();
+            renderDashboard();
+            closeModal();
+            window.haptic("light");
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+}
+
+async function toggleInvoice(id) {
+    const invoice = findInvoice(id);
+    if (!invoice) return;
+
+    const appointment = invoice.appointmentId
+        ? findAppointment(invoice.appointmentId)
+        : null;
+
+    try {
+        if (invoice.status === "Оплачено") {
+            await updateInvoice(invoice.id, {
+                clientId: invoice.clientId,
+                appointmentId: invoice.appointmentId,
+                amount: invoice.amount,
+                status: "Не оплачено",
+                dueDate: invoice.dueDate,
+                paidAt: null,
+                notes: invoice.notes
+            });
+
+            if (appointment) {
+                await updateAppointment(
+                    appointment.id, appointment.clientId, appointment.date, appointment.time,
+                    appointment.price, appointment.notes, "Ожидает оплаты", appointment.service
+                );
+            }
+        } else {
+            await updateInvoice(invoice.id, {
+                clientId: invoice.clientId,
+                appointmentId: invoice.appointmentId,
+                amount: invoice.amount,
+                status: "Оплачено",
+                dueDate: invoice.dueDate,
+                paidAt: new Date().toISOString(),
+                notes: invoice.notes
+            });
+
+            if (appointment) {
+                await updateAppointment(
+                    appointment.id, appointment.clientId, appointment.date, appointment.time,
+                    appointment.price, appointment.notes, "Оплачено", appointment.service
+                );
+            }
+        }
+
+        renderInvoices();
+        renderAppointments();
+        renderDashboard();
+        window.haptic("light");
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+async function deleteInvoice(id) {
+    const invoice = findInvoice(id);
+    if (!invoice) return;
+
+    const appointment = invoice.appointmentId
+        ? findAppointment(invoice.appointmentId)
+        : null;
+
+    try {
+        await apiRequest(`/invoices/${id}`, { method: "DELETE" });
+
+        clientFlowData.invoices = clientFlowData.invoices.filter(
+            item => Number(item.id) !== Number(id)
+        );
+
+        if (appointment) {
+            await updateAppointment(
+                appointment.id, appointment.clientId, appointment.date, appointment.time,
+                appointment.price, appointment.notes, "Ожидает оплаты", appointment.service
+            );
+        }
+
+        renderInvoices();
+        renderAppointments();
+        renderDashboard();
+        window.haptic("light");
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+
 function createModal() {
     if (document.getElementById("clientflow-modal")) return;
+
     const modal = document.createElement("div");
     modal.id = "clientflow-modal";
     modal.innerHTML = `
@@ -459,22 +1394,36 @@ function createModal() {
             </div>
         </div>
     `;
+
     const appContainer = document.querySelector(".app");
-    if (appContainer) appContainer.appendChild(modal);
-    else document.body.appendChild(modal);
+    if (appContainer) {
+        appContainer.appendChild(modal);
+    } else {
+        document.body.appendChild(modal);
+    }
 
     modal.querySelector(".modal-close").addEventListener("click", closeModal);
-    modal.querySelector(".modal-overlay").addEventListener("click", e => { if (e.target === modal.querySelector(".modal-overlay")) closeModal(); });
+    modal.querySelector(".modal-overlay").addEventListener("click", event => {
+        if (event.target === modal.querySelector(".modal-overlay")) {
+            closeModal();
+        }
+    });
 }
 
 function openModal(content) {
     const modal = document.getElementById("clientflow-modal");
     if (!modal) return;
+
     const contentBox = modal.querySelector("#modal-content");
     if (!contentBox) return;
+
     contentBox.innerHTML = content;
     modal.classList.add("show");
-    setTimeout(() => { const firstInput = contentBox.querySelector("input"); if (firstInput) firstInput.focus(); }, 100);
+
+    setTimeout(() => {
+        const firstInput = contentBox.querySelector("input, select");
+        if (firstInput) firstInput.focus();
+    }, 100);
 }
 
 function closeModal() {
@@ -483,227 +1432,9 @@ function closeModal() {
     modal.classList.remove("show");
 }
 
-function openClientForm() {
-    openModal(`
-        <h2>Новый клиент</h2>
-        <input id="client-name" type="text" placeholder="Имя">
-        <input id="client-phone" type="tel" placeholder="Телефон">
-        <button class="primary-btn" id="save-client" type="button">Сохранить</button>
-    `);
-    document.getElementById("save-client").addEventListener("click", function() {
-        const name = document.getElementById("client-name").value.trim();
-        const phone = document.getElementById("client-phone").value.trim();
-        if (!name) { document.getElementById("client-name").focus(); return; }
-        clientFlowData.clients.push({ id: generateId(), name, phone, visits: 0, total: 0, status: "Новый клиент", archived: false });
-        clientFlowSaveData();
-        renderClients();
-        renderDashboard();
-        closeModal();
-    });
-}
-
-function openAppointmentForm() {
-    openModal(`
-        <h2>Новая запись</h2>
-        <input id="appointment-client" type="text" placeholder="Клиент">
-        <input id="appointment-service" type="text" placeholder="Услуга">
-        <input id="appointment-date" type="date" value="${selectedDate}">
-        <input id="appointment-time" type="time">
-        <input id="appointment-price" type="number" min="0" placeholder="Цена">
-        <button class="primary-btn" id="save-appointment" type="button">Создать запись</button>
-    `);
-    document.getElementById("save-appointment").addEventListener("click", function() {
-        const client = document.getElementById("appointment-client").value.trim();
-        if (!client) { document.getElementById("appointment-client").focus(); return; }
-        const service = document.getElementById("appointment-service").value.trim();
-        const date = document.getElementById("appointment-date").value || getTodayDate();
-        const time = document.getElementById("appointment-time").value;
-        const price = Number(document.getElementById("appointment-price").value) || 0;
-        clientFlowData.appointments.push({ id: generateId(), client, service, date, time, price, status: "Ожидает оплаты", archived: false });
-        selectedDate = date;
-        const createdDate = new Date(`${date}T12:00:00`);
-        calendarYear = createdDate.getFullYear();
-        calendarMonth = createdDate.getMonth();
-        clientFlowSaveData();
-        renderCalendar();
-        renderAppointments();
-        renderDashboard();
-        closeModal();
-    });
-}
-
-function openInvoiceForm() {
-    openModal(`
-        <h2>Новый счёт</h2>
-        <input id="invoice-client" type="text" placeholder="Клиент">
-        <input id="invoice-amount" type="number" min="0" placeholder="Сумма">
-        <button class="primary-btn" id="save-invoice" type="button">Создать счёт</button>
-    `);
-    document.getElementById("save-invoice").addEventListener("click", function() {
-        const client = document.getElementById("invoice-client").value.trim();
-        const amount = Number(document.getElementById("invoice-amount").value) || 0;
-        if (!client) { document.getElementById("invoice-client").focus(); return; }
-        if (amount <= 0) { document.getElementById("invoice-amount").focus(); return; }
-        clientFlowData.invoices.push({ id: generateId(), client, amount, status: "Не оплачено", date: getTodayDate() });
-        clientFlowSaveData();
-        renderInvoices();
-        renderDashboard();
-        closeModal();
-    });
-}
-
-function openClientEditForm(id) {
-    const client = findClient(id);
-    if (!client) return;
-    openModal(`
-        <h2>Редактировать клиента</h2>
-        <input id="edit-client-name" type="text" value="${escapeHtml(client.name)}" placeholder="Имя">
-        <input id="edit-client-phone" type="tel" value="${escapeHtml(client.phone || "")}" placeholder="Телефон">
-        <button class="primary-btn" id="update-client" type="button">Сохранить изменения</button>
-    `);
-    document.getElementById("update-client").addEventListener("click", function() {
-        const name = document.getElementById("edit-client-name").value.trim();
-        const phone = document.getElementById("edit-client-phone").value.trim();
-        if (!name) return;
-        client.name = name;
-        client.phone = phone;
-        clientFlowSaveData();
-        renderClients();
-        renderDashboard();
-        closeModal();
-    });
-}
-
-function archiveClient(id) {
-    const client = findClient(id);
-    if (!client) return;
-    client.archived = true;
-    clientFlowSaveData();
-    renderClients();
-    renderDashboard();
-}
-
-function restoreClient(id) {
-    const client = findClient(id);
-    if (!client) return;
-    client.archived = false;
-    clientFlowSaveData();
-    renderClients();
-    renderDashboard();
-}
-
-function deleteClient(id) {
-    clientFlowData.clients = clientFlowData.clients.filter(c => Number(c.id) !== Number(id));
-    clientFlowSaveData();
-    renderClients();
-    renderDashboard();
-}
-
-function openAppointmentEditForm(id) {
-    const appointment = findAppointment(id);
-    if (!appointment) return;
-    openModal(`
-        <h2>Редактировать запись</h2>
-        <input id="edit-appointment-client" type="text" value="${escapeHtml(appointment.client || "")}" placeholder="Клиент">
-        <input id="edit-appointment-service" type="text" value="${escapeHtml(appointment.service || "")}" placeholder="Услуга">
-        <input id="edit-appointment-date" type="date" value="${escapeHtml(appointment.date || getTodayDate())}">
-        <input id="edit-appointment-time" type="time" value="${escapeHtml(appointment.time || "")}">
-        <input id="edit-appointment-price" type="number" min="0" value="${Number(appointment.price) || 0}" placeholder="Цена">
-        <button class="primary-btn" id="update-appointment" type="button">Сохранить изменения</button>
-    `);
-    document.getElementById("update-appointment").addEventListener("click", function() {
-        const client = document.getElementById("edit-appointment-client").value.trim();
-        if (!client) return;
-        const oldDate = appointment.date;
-        appointment.client = client;
-        appointment.service = document.getElementById("edit-appointment-service").value.trim();
-        appointment.date = document.getElementById("edit-appointment-date").value || getTodayDate();
-        appointment.time = document.getElementById("edit-appointment-time").value;
-        appointment.price = Number(document.getElementById("edit-appointment-price").value) || 0;
-        const invoice = findInvoiceForAppointment(appointment.id);
-        if (invoice) { invoice.client = appointment.client; invoice.amount = appointment.price; invoice.date = appointment.date; }
-        if (oldDate !== appointment.date) {
-            selectedDate = appointment.date;
-            const newDate = new Date(`${appointment.date}T12:00:00`);
-            calendarYear = newDate.getFullYear();
-            calendarMonth = newDate.getMonth();
-        }
-        clientFlowSaveData();
-        renderCalendar();
-        renderAppointments();
-        renderInvoices();
-        renderDashboard();
-        closeModal();
-    });
-}
-
-function deleteAppointment(id) {
-    clientFlowData.appointments = clientFlowData.appointments.filter(a => Number(a.id) !== Number(id));
-    clientFlowData.invoices = clientFlowData.invoices.filter(i => Number(i.appointmentId) !== Number(id));
-    clientFlowSaveData();
-    renderCalendar();
-    renderAppointments();
-    renderInvoices();
-    renderDashboard();
-}
-
-function openInvoiceEditForm(id) {
-    const invoice = findInvoice(id);
-    if (!invoice) return;
-    openModal(`
-        <h2>Редактировать счёт</h2>
-        <input id="edit-invoice-client" type="text" value="${escapeHtml(invoice.client || "")}" placeholder="Клиент">
-        <input id="edit-invoice-amount" type="number" min="0" value="${Number(invoice.amount) || 0}" placeholder="Сумма">
-        <button class="primary-btn" id="update-invoice" type="button">Сохранить изменения</button>
-    `);
-    document.getElementById("update-invoice").addEventListener("click", function() {
-        const client = document.getElementById("edit-invoice-client").value.trim();
-        const amount = Number(document.getElementById("edit-invoice-amount").value) || 0;
-        if (!client) return;
-        if (amount <= 0) return;
-        invoice.client = client;
-        invoice.amount = amount;
-        if (invoice.appointmentId) {
-            const appointment = findAppointment(invoice.appointmentId);
-            if (appointment) { appointment.client = client; appointment.price = amount; }
-        }
-        clientFlowSaveData();
-        renderInvoices();
-        renderAppointments();
-        renderDashboard();
-        closeModal();
-    });
-}
-
-function toggleInvoice(id) {
-    const invoice = findInvoice(id);
-    if (!invoice) return;
-    const appointment = invoice.appointmentId ? findAppointment(invoice.appointmentId) : null;
-    if (invoice.status === "Оплачено") {
-        invoice.status = "Не оплачено";
-        if (appointment) { appointment.status = "Ожидает оплаты"; appointment.archived = false; }
-    } else {
-        invoice.status = "Оплачено";
-        if (appointment) { appointment.status = "Оплачено"; appointment.archived = true; }
-    }
-    clientFlowSaveData();
-    renderInvoices();
-    renderAppointments();
-    renderDashboard();
-    window.haptic("light");
-}
-
-function deleteInvoice(id) {
-    const invoice = findInvoice(id);
-    if (!invoice) return;
-    const appointment = invoice.appointmentId ? findAppointment(invoice.appointmentId) : null;
-    if (appointment) { appointment.status = "Ожидает оплаты"; appointment.archived = false; }
-    clientFlowData.invoices = clientFlowData.invoices.filter(i => Number(i.id) !== Number(id));
-    clientFlowSaveData();
-    renderInvoices();
-    renderAppointments();
-    renderDashboard();
-}
+// ============================================================
+// CONFIRM DELETE
+// ============================================================
 
 function confirmDelete(title, message, callback) {
     openModal(`
@@ -716,31 +1447,102 @@ function confirmDelete(title, message, callback) {
             </div>
         </div>
     `);
+
     document.getElementById("cancel-confirm").addEventListener("click", closeModal);
-    document.getElementById("confirm-action").addEventListener("click", function() { callback(); closeModal(); });
+    document.getElementById("confirm-action").addEventListener("click", async function () {
+        try {
+            await callback();
+            closeModal();
+        } catch (error) {
+            showError(error.message);
+        }
+    });
 }
 
-document.addEventListener("click", function(event) {
+// ============================================================
+// ERROR DISPLAY
+// ============================================================
+
+function showError(message) {
+    console.error("ClientFlow error:", message);
+
+    const existing = document.getElementById("clientflow-error");
+    if (existing) existing.remove();
+
+    const error = document.createElement("div");
+    error.id = "clientflow-error";
+    error.textContent = message || "Произошла ошибка";
+
+    error.style.position = "fixed";
+    error.style.left = "16px";
+    error.style.right = "16px";
+    error.style.bottom = "20px";
+    error.style.zIndex = "99999";
+    error.style.padding = "14px 16px";
+    error.style.borderRadius = "12px";
+    error.style.background = "#dc2626";
+    error.style.color = "#ffffff";
+    error.style.fontSize = "14px";
+    error.style.boxShadow = "0 8px 30px rgba(0,0,0,.2)";
+
+    document.body.appendChild(error);
+    setTimeout(() => { error.remove(); }, 4000);
+}
+
+// ============================================================
+// GLOBAL CLICK HANDLER
+// ============================================================
+
+document.addEventListener("click", function (event) {
     const button = event.target.closest("[data-action]");
     if (!button) return;
+
     const action = button.dataset.action;
     const id = button.dataset.id;
 
     if (action === "edit-client") openClientEditForm(id);
     if (action === "archive-client") archiveClient(id);
     if (action === "restore-client") restoreClient(id);
-    if (action === "delete-client") confirmDelete("Удалить клиента?", "Клиент будет удалён окончательно.", () => deleteClient(id));
+    if (action === "delete-client") {
+        confirmDelete("Удалить клиента?", "Клиент будет удалён окончательно.", () => deleteClient(id));
+    }
     if (action === "edit-appointment") openAppointmentEditForm(id);
     if (action === "pay-appointment") payAppointment(id);
-    if (action === "delete-appointment") confirmDelete("Удалить запись?", "Запись и связанный автоматический счёт будут удалены.", () => deleteAppointment(id));
+    if (action === "delete-appointment") {
+        confirmDelete("Удалить запись?", "Запись будет удалена окончательно.", () => deleteAppointment(id));
+    }
     if (action === "edit-invoice") openInvoiceEditForm(id);
     if (action === "toggle-invoice") toggleInvoice(id);
-    if (action === "delete-invoice") confirmDelete("Удалить счёт?", "Счёт будет удалён окончательно.", () => deleteInvoice(id));
+    if (action === "delete-invoice") {
+        confirmDelete("Удалить счёт?", "Счёт будет удалён окончательно.", () => deleteInvoice(id));
+    }
 });
+
+// ============================================================
+// NAVIGATION EVENTS
+// ============================================================
+
+document.querySelectorAll(".nav-btn").forEach(button => {
+    button.addEventListener("click", () => {
+        window.haptic("light");
+        openScreen(button.dataset.screen);
+    });
+});
+
+document.querySelectorAll(".action-card").forEach(button => {
+    button.addEventListener("click", () => {
+        window.haptic("light");
+        openScreen(button.dataset.screen);
+    });
+});
+
+// ============================================================
+// CALENDAR EVENTS
+// ============================================================
 
 document.getElementById("calendar-prev")?.addEventListener("click", () => changeCalendarMonth(-1));
 document.getElementById("calendar-next")?.addEventListener("click", () => changeCalendarMonth(1));
-document.getElementById("calendar-today")?.addEventListener("click", function() {
+document.getElementById("calendar-today")?.addEventListener("click", function () {
     const current = new Date();
     calendarYear = current.getFullYear();
     calendarMonth = current.getMonth();
@@ -749,8 +1551,12 @@ document.getElementById("calendar-today")?.addEventListener("click", function() 
     renderAppointments();
 });
 
+// ============================================================
+// ADD BUTTONS
+// ============================================================
+
 document.querySelectorAll(".add-btn").forEach(button => {
-    button.addEventListener("click", function() {
+    button.addEventListener("click", function () {
         const type = button.dataset.add;
         if (type === "client") openClientForm();
         if (type === "appointment") openAppointmentForm();
@@ -758,5 +1564,35 @@ document.querySelectorAll(".add-btn").forEach(button => {
     });
 });
 
-createModal();
-renderDashboard();
+// ============================================================
+// INITIALIZATION
+// ============================================================
+
+async function initializeClientFlow() {
+    createModal();
+
+    try {
+        await authenticate();
+        await loadAllData();
+
+        renderDashboard();
+        renderClients();
+        renderCalendar();
+        renderAppointments();
+        renderInvoices();
+
+        console.log("ClientFlow initialized successfully");
+        console.log("Clients:", clientFlowData.clients.length);
+        console.log("Appointments:", clientFlowData.appointments.length);
+        console.log("Invoices:", clientFlowData.invoices.length);
+    } catch (error) {
+        console.error("ClientFlow initialization failed:", error);
+        showError(error.message || "Не удалось загрузить ClientFlow");
+    }
+}
+
+// ============================================================
+// START
+// ============================================================
+
+initializeClientFlow();
