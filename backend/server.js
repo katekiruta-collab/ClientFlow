@@ -12,9 +12,9 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-// ========================================
+// ============================================================
 // PostgreSQL
-// ========================================
+// ============================================================
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -30,17 +30,17 @@ pool.on("error", (error) => {
     );
 });
 
-// ========================================
+// ============================================================
 // Middleware
-// ========================================
+// ============================================================
 
 app.use(cors());
 
 app.use(express.json());
 
-// ========================================
+// ============================================================
 // Database initialization
-// ========================================
+// ============================================================
 
 async function initializeDatabase() {
     await pool.query(`
@@ -63,6 +63,7 @@ async function initializeDatabase() {
             phone TEXT,
             email TEXT,
             notes TEXT,
+            archived BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -100,13 +101,28 @@ async function initializeDatabase() {
         );
     `);
 
-    // ========================================
-    // Existing database migrations
-    // ========================================
+    // ========================================================
+    // Migrations
+    // ========================================================
+
+    await pool.query(`
+        ALTER TABLE clients
+        ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
+    `);
 
     await pool.query(`
         ALTER TABLE appointments
         ADD COLUMN IF NOT EXISTS service TEXT;
+    `);
+
+    await pool.query(`
+        ALTER TABLE appointments
+        ALTER COLUMN status SET DEFAULT 'planned';
+    `);
+
+    await pool.query(`
+        ALTER TABLE invoices
+        ALTER COLUMN status SET DEFAULT 'unpaid';
     `);
 
     console.log(
@@ -114,16 +130,21 @@ async function initializeDatabase() {
     );
 }
 
-// ========================================
+// ============================================================
 // Telegram user
-// ========================================
+// ============================================================
 
 async function getOrCreateUser(telegramUser) {
     const telegramId = telegramUser.id;
 
-    const firstName = telegramUser.first_name || null;
-    const lastName = telegramUser.last_name || null;
-    const username = telegramUser.username || null;
+    const firstName =
+        telegramUser.first_name || null;
+
+    const lastName =
+        telegramUser.last_name || null;
+
+    const username =
+        telegramUser.username || null;
 
     const result = await pool.query(
         `
@@ -153,9 +174,9 @@ async function getOrCreateUser(telegramUser) {
     return result.rows[0];
 }
 
-// ========================================
+// ============================================================
 // Authentication middleware
-// ========================================
+// ============================================================
 
 async function authenticateRequest(req, res, next) {
     try {
@@ -199,15 +220,42 @@ async function authenticateRequest(req, res, next) {
     }
 }
 
-// ========================================
+// ============================================================
 // Helpers
-// ========================================
+// ============================================================
+
+function normalizeStatus(status) {
+    return status === "paid" || status === "Оплачено"
+        ? "paid"
+        : "planned";
+}
+
+function normalizeInvoiceStatus(status) {
+    return status === "paid" || status === "Оплачено"
+        ? "paid"
+        : "unpaid";
+}
+
+function normalizeNumber(value) {
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+        return 0;
+    }
+
+    return number;
+}
 
 async function verifyClientOwnership(
     clientId,
     userId
 ) {
-    if (!clientId) {
+    if (
+        clientId === null ||
+        clientId === undefined ||
+        clientId === "" ||
+        Number(clientId) === 0
+    ) {
         return true;
     }
 
@@ -232,7 +280,12 @@ async function verifyAppointmentOwnership(
     appointmentId,
     userId
 ) {
-    if (!appointmentId) {
+    if (
+        appointmentId === null ||
+        appointmentId === undefined ||
+        appointmentId === "" ||
+        Number(appointmentId) === 0
+    ) {
         return true;
     }
 
@@ -253,20 +306,20 @@ async function verifyAppointmentOwnership(
     return result.rows.length > 0;
 }
 
-// ========================================
+// ============================================================
 // Health check
-// ========================================
+// ============================================================
 
 app.get("/", (req, res) => {
     res.json({
         status: "ClientFlow backend is running",
-        version: "1.1.0"
+        version: "1.2.0"
     });
 });
 
-// ========================================
+// ============================================================
 // PostgreSQL connection test
-// ========================================
+// ============================================================
 
 app.get("/api/db-test", async (req, res) => {
     try {
@@ -295,9 +348,9 @@ app.get("/api/db-test", async (req, res) => {
     }
 });
 
-// ========================================
+// ============================================================
 // Telegram auth
-// ========================================
+// ============================================================
 
 app.post("/api/auth", async (req, res) => {
     try {
@@ -341,9 +394,9 @@ app.post("/api/auth", async (req, res) => {
     }
 });
 
-// ========================================
+// ============================================================
 // CLIENTS
-// ========================================
+// ============================================================
 
 // Get all clients
 app.get(
@@ -353,10 +406,13 @@ app.get(
         try {
             const result = await pool.query(
                 `
-                SELECT *
+                SELECT
+                    clients.*
                 FROM clients
-                WHERE user_id = $1
-                ORDER BY name ASC;
+                WHERE clients.user_id = $1
+                ORDER BY
+                    clients.archived ASC,
+                    clients.name ASC;
                 `,
                 [req.user.id]
             );
@@ -406,9 +462,10 @@ app.post(
                     name,
                     phone,
                     email,
-                    notes
+                    notes,
+                    archived
                 )
-                VALUES ($1, $2, $3, $4, $5)
+                VALUES ($1, $2, $3, $4, $5, FALSE)
                 RETURNING *;
                 `,
                 [
@@ -448,7 +505,8 @@ app.put(
                 name,
                 phone,
                 email,
-                notes
+                notes,
+                archived
             } = req.body;
 
             if (!name || !String(name).trim()) {
@@ -458,6 +516,9 @@ app.put(
                 });
             }
 
+            const archivedValue =
+                archived === true;
+
             const result = await pool.query(
                 `
                 UPDATE clients
@@ -466,9 +527,10 @@ app.put(
                     phone = $2,
                     email = $3,
                     notes = $4,
+                    archived = $5,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = $5
-                  AND user_id = $6
+                WHERE id = $6
+                  AND user_id = $7
                 RETURNING *;
                 `,
                 [
@@ -476,6 +538,7 @@ app.put(
                     phone || null,
                     email || null,
                     notes || null,
+                    archivedValue,
                     req.params.id,
                     req.user.id
                 ]
@@ -549,9 +612,9 @@ app.delete(
     }
 );
 
-// ========================================
+// ============================================================
 // APPOINTMENTS
-// ========================================
+// ============================================================
 
 // Get appointments
 app.get(
@@ -570,7 +633,8 @@ app.get(
                 WHERE appointments.user_id = $1
                 ORDER BY
                     appointments.date ASC,
-                    appointments.time ASC;
+                    appointments.time ASC,
+                    appointments.id ASC;
                 `,
                 [req.user.id]
             );
@@ -629,6 +693,12 @@ app.post(
                 });
             }
 
+            const normalizedStatus =
+                normalizeStatus(status);
+
+            const normalizedPrice =
+                normalizeNumber(price);
+
             const result = await pool.query(
                 `
                 INSERT INTO appointments (
@@ -650,8 +720,8 @@ app.post(
                     date,
                     time || null,
                     service || null,
-                    status || "planned",
-                    Number(price) || 0,
+                    normalizedStatus,
+                    normalizedPrice,
                     notes || null
                 ]
             );
@@ -710,6 +780,12 @@ app.put(
                 });
             }
 
+            const normalizedStatus =
+                normalizeStatus(status);
+
+            const normalizedPrice =
+                normalizeNumber(price);
+
             const result = await pool.query(
                 `
                 UPDATE appointments
@@ -731,8 +807,8 @@ app.put(
                     date,
                     time || null,
                     service || null,
-                    status || "planned",
-                    Number(price) || 0,
+                    normalizedStatus,
+                    normalizedPrice,
                     notes || null,
                     req.params.id,
                     req.user.id
@@ -807,9 +883,9 @@ app.delete(
     }
 );
 
-// ========================================
+// ============================================================
 // INVOICES
-// ========================================
+// ============================================================
 
 // Get invoices
 app.get(
@@ -827,7 +903,8 @@ app.get(
                     ON clients.id = invoices.client_id
                 WHERE invoices.user_id = $1
                 ORDER BY
-                    invoices.created_at DESC;
+                    invoices.created_at DESC,
+                    invoices.id DESC;
                 `,
                 [req.user.id]
             );
@@ -892,6 +969,17 @@ app.post(
                 });
             }
 
+            const normalizedStatus =
+                normalizeInvoiceStatus(status);
+
+            const normalizedAmount =
+                normalizeNumber(amount);
+
+            const normalizedPaidAt =
+                normalizedStatus === "paid"
+                    ? (paid_at || new Date().toISOString())
+                    : null;
+
             const result = await pool.query(
                 `
                 INSERT INTO invoices (
@@ -911,10 +999,10 @@ app.post(
                     req.user.id,
                     client_id || null,
                     appointment_id || null,
-                    Number(amount) || 0,
-                    status || "unpaid",
+                    normalizedAmount,
+                    normalizedStatus,
                     due_date || null,
-                    paid_at || null,
+                    normalizedPaidAt,
                     notes || null
                 ]
             );
@@ -979,6 +1067,17 @@ app.put(
                 });
             }
 
+            const normalizedStatus =
+                normalizeInvoiceStatus(status);
+
+            const normalizedAmount =
+                normalizeNumber(amount);
+
+            const normalizedPaidAt =
+                normalizedStatus === "paid"
+                    ? (paid_at || new Date().toISOString())
+                    : null;
+
             const result = await pool.query(
                 `
                 UPDATE invoices
@@ -998,10 +1097,10 @@ app.put(
                 [
                     client_id || null,
                     appointment_id || null,
-                    Number(amount) || 0,
-                    status || "unpaid",
+                    normalizedAmount,
+                    normalizedStatus,
                     due_date || null,
-                    paid_at || null,
+                    normalizedPaidAt,
                     notes || null,
                     req.params.id,
                     req.user.id
@@ -1076,9 +1175,9 @@ app.delete(
     }
 );
 
-// ========================================
+// ============================================================
 // 404
-// ========================================
+// ============================================================
 
 app.use((req, res) => {
     res.status(404).json({
@@ -1087,9 +1186,9 @@ app.use((req, res) => {
     });
 });
 
-// ========================================
+// ============================================================
 // Global error handler
-// ========================================
+// ============================================================
 
 app.use((error, req, res, next) => {
     console.error(
@@ -1107,9 +1206,9 @@ app.use((error, req, res, next) => {
     });
 });
 
-// ========================================
+// ============================================================
 // Start server
-// ========================================
+// ============================================================
 
 async function startServer() {
     try {
